@@ -83,6 +83,10 @@
       [node (v l r) (type-case Record (sorted-real? T)
                       [sortr (sorted a b) sorted])])))
 
+;; Based on the observation that an in-order traversal is sorted iff
+;; the left and right subtrees are sorted and the right most leaf of the
+;; left subtree is <= the node value and the left most leaf of the right
+;; subtree is >= the node value. Leaf nodes are obviously sorted.
 (define sorted-real? : (Tree -> Record)
   (λ (T)
     (type-case Tree T
@@ -136,4 +140,17 @@
                              (leaf 3))
                        (node 3 ; err
                              (leaf 5)
-                             (leaf 7)))) false))
+                             (leaf 7)))) false)
+  (test (sorted? (node 14 
+                       (node 5 (node 2 (leaf 1) (leaf 4)) 
+                             (node 8 (leaf 7) (node 11 (leaf 10) (leaf 13)))) (leaf 16))) true)
+  (test (sorted? (node 5 
+                       (node 3 (node 1 (leaf 0) (leaf 9)) (leaf 4)) 
+                       (node 2 (node 7 (leaf 6) (leaf 8)) (node 11 (leaf 10) (leaf 12))))) false)
+  (test (sorted? (node 5 
+                       (node 3 (node 1 (leaf 0) (leaf 10)) (leaf 4)) 
+                       (node 9 (node 7 (leaf 6) (leaf 8)) (node 11 (leaf 2) (leaf 12))))) false)
+  (test (sorted? (node 5 (leaf 5) (leaf 5))) true)
+  (test (sorted? (node 0 
+                       (node 3 (node 4 (leaf 7) (leaf 2)) (node 8 (leaf 1) (leaf 6))) 
+                       (node 11 (node 9 (leaf 5) (leaf 10)) (node 13 (leaf 12) (leaf 14))))) false))
