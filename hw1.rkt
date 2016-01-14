@@ -195,16 +195,13 @@
   (test (sorted? (node 0 
                        (node 3 (node 4 (leaf 7) (leaf 2)) (node 8 (leaf 1) (leaf 6))) 
                        (node 11 (node 9 (leaf 5) (leaf 10)) (node 13 (leaf 12) (leaf 14))))) false)
-<<<<<<< HEAD
   (test (sorted? (node 9 
                        (node 7 (node 11 (node 1 (leaf 0) (leaf 10)) (node 5 (leaf 4) (leaf 6))) (leaf 8)) 
                        (node 17 
                              (node 20 (node 3 (leaf 2) (leaf 12)) (node 15 (leaf 14) (leaf 16))) 
-                             (node 19 (leaf 18) (leaf 13))))) #f))
-=======
+                             (node 19 (leaf 18) (leaf 13))))) #f)
   (test (sorted? (node 5 
                        (leaf 1) 
                        (node 7 
                              (leaf 3) ; Violation
                              (leaf 8)))) #f))
->>>>>>> 6daae07ebc83e76e7e44f44b26496a09d6509c02
