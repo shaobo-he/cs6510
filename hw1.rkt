@@ -153,4 +153,9 @@
   (test (sorted? (node 5 (leaf 5) (leaf 5))) true)
   (test (sorted? (node 0 
                        (node 3 (node 4 (leaf 7) (leaf 2)) (node 8 (leaf 1) (leaf 6))) 
-                       (node 11 (node 9 (leaf 5) (leaf 10)) (node 13 (leaf 12) (leaf 14))))) false))
+                       (node 11 (node 9 (leaf 5) (leaf 10)) (node 13 (leaf 12) (leaf 14))))) false)
+  (test (sorted? (node 5 
+                       (leaf 1) 
+                       (node 7 
+                             (leaf 3) ; Violation
+                             (leaf 8)))) #f))
