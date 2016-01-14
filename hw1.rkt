@@ -1,8 +1,8 @@
 #lang plai-typed
 (print-only-errors true)
 (define-type Tree
-  [leaf (val : number)]
-  [node (val : number)
+  [leaf (num-bound : number)]
+  [node (num-bound : number)
         (left : Tree)
         (right : Tree)])
 
@@ -112,37 +112,37 @@
 (define-type Bound
   [-inf] ; <= to every number
   [+inf] ; >= to every number
-  [val (v : number)])
+  [bound (v : number)])
   
-(define lt : (Bound number -> boolean)
+(define bound-<= : (Bound number -> boolean)
   (λ (b n)
     (type-case Bound b
-      [-inf () #t]
-      [+inf () #f]
-      [val (v) (<= v n)])))
+      [-inf  ()  #t]
+      [+inf  ()  #f]
+      [bound (v) (<= v n)])))
 
-(define gt : (Bound number -> boolean)
+(define bound->= : (Bound number -> boolean)
   (λ (b n)
     (type-case Bound b
-      [-inf () #f]
-      [+inf () #t]
-      [val (v) (>= v n)])))
+      [-inf  ()  #f]
+      [+inf  ()  #t]
+      [bound (v) (>= v n)])))
 
 (define in-range? : (Bound number Bound -> boolean)
   (λ (lb n ub)
-    (and (lt lb n) (gt ub n))))
+    (and (bound-<= lb n) (bound->= ub n))))
 
 (define sorted? : (Tree -> boolean)
   (λ (t)
-    (sorted-real? t (-inf) (+inf))))
+    (sorted-real? (-inf) t (+inf))))
 
-(define sorted-real? : (Tree Bound Bound -> boolean)
-  (λ (t lb ub)
+(define sorted-real? : (Bound Tree Bound -> boolean)
+  (λ (lb t ub)
     (type-case Tree t
       [leaf (v) (in-range? lb v ub)]
       [node (v l r) (and (in-range? lb v ub)
-                         (sorted-real? l lb (val v))
-                         (sorted-real? r (val v) ub))])))
+                         (sorted-real? lb  l (bound v))
+                         (sorted-real? (bound v) r ub))])))
 
 (module+ test
   (test (sorted? (node 1 
@@ -183,8 +183,16 @@
                              (leaf 5)
                              (leaf 7)))) false)
   (test (sorted? (node 14 
-                       (node 5 (node 2 (leaf 1) (leaf 4)) 
-                             (node 8 (leaf 7) (node 11 (leaf 10) (leaf 13)))) (leaf 16))) true)
+                       (node 5 
+                             (node 2 
+                                   (leaf 1) 
+                                   (leaf 4)) 
+                             (node 8 
+                                   (leaf 7) 
+                                   (node 11 
+                                         (leaf 10) 
+                                         (leaf 13)))) 
+                       (leaf 16))) true)
   (test (sorted? (node 5 
                        (node 3 (node 1 (leaf 0) (leaf 9)) (leaf 4)) 
                        (node 2 (node 7 (leaf 6) (leaf 8)) (node 11 (leaf 10) (leaf 12))))) false)
