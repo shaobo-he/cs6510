@@ -53,9 +53,9 @@
   (λ (t acc)
     (type-case Tree t
       [leaf (v) (> v acc)]
-      [node (v l r) (let [(acc-new (+ acc v))]
-                      (and (big-leaves-real? l acc-new)
-                           (big-leaves-real? r acc-new)))])))
+      [node (v l r) (let [(acc+v (+ acc v))]
+                      (and (big-leaves-real? l acc+v)
+                           (big-leaves-real? r acc+v)))])))
 
 (module+ test
   (test (big-leaves? (node 5 (node 3 (leaf 8) (leaf 6)) (node 5 (leaf 20) (leaf 20))))
@@ -76,32 +76,73 @@
          (left   : number )
          (right  : number )])
 
-(define sorted? : (Tree -> boolean)
+#;(define sorted? : (Tree -> boolean)
   (λ (T)
     (type-case Tree T
       [leaf (v) true]
-      [node (v l r) (type-case Record (sorted-real? T)
-                      [sortr (sorted a b) sorted])])))
+      [node (v l r) (local [(define-values 
+                              (t dont care)
+                              (sorted-real? T))]
+                      t)])))
 
 ;; Based on the observation that an in-order traversal is sorted iff
-;; the left and right subtrees are sorted and the right most leaf of the
-;; left subtree is <= the node value and the left most leaf of the right
-;; subtree is >= the node value. Leaf nodes are obviously sorted.
-(define sorted-real? : (Tree -> Record)
-  (λ (T)
-    (type-case Tree T
-      [leaf (v) (sortr #t v v)]
+;; the left and right subtrees are sorted and the right most leaf (max)
+;; of the left subtree is <= the node value and the left most leaf (min)
+;; of the right subtree is >= the node value. Leaf nodes are obviously 
+;; sorted.
+#;(define sorted-real? : (Tree -> (boolean * number * number))
+  (λ (t)
+    (type-case Tree t
+      [leaf (v) (values #t v v)]
       [node (v l r) (let [(l-result 
                            (sorted-real? l))
                           (r-result
                            (sorted-real? r))]
-                      (type-case Record l-result
-                        [sortr (s-l ll lr)
-                               (type-case Record r-result
-                                 [sortr (s-r rl rr)
-                                        (sortr (and s-l (>= v lr)
-                                                    s-r (<= v rl))
-                                               ll rr)])]))])))
+                      (local  
+                        [(define-values
+                           (l-sorted l-min l-max)
+                           l-result)
+                         (define-values
+                           (r-sorted r-min r-max)
+                           r-result)]
+                        (values (and l-sorted (>= v l-max)
+                                     r-sorted (<= v r-min))
+                                l-min r-max)))])))
+
+(define-type Bound
+  [-inf] ; <= to every number
+  [+inf] ; >= to every number
+  [val (v : number)])
+  
+(define lt : (Bound number -> boolean)
+  (λ (b n)
+    (type-case Bound b
+      [-inf () #t]
+      [+inf () #f]
+      [val (v) (<= v n)])))
+
+(define gt : (Bound number -> boolean)
+  (λ (b n)
+    (type-case Bound b
+      [-inf () #f]
+      [+inf () #t]
+      [val (v) (>= v n)])))
+
+(define in-range? : (Bound number Bound -> boolean)
+  (λ (lb n ub)
+    (and (lt lb n) (gt ub n))))
+
+(define sorted? : (Tree -> boolean)
+  (λ (t)
+    (sorted-real? t (-inf) (+inf))))
+
+(define sorted-real? : (Tree Bound Bound -> boolean)
+  (λ (t lb ub)
+    (type-case Tree t
+      [leaf (v) (in-range? lb v ub)]
+      [node (v l r) (and (in-range? lb v ub)
+                         (sorted-real? l lb (val v))
+                         (sorted-real? r (val v) ub))])))
 
 (module+ test
   (test (sorted? (node 1 
@@ -153,4 +194,9 @@
   (test (sorted? (node 5 (leaf 5) (leaf 5))) true)
   (test (sorted? (node 0 
                        (node 3 (node 4 (leaf 7) (leaf 2)) (node 8 (leaf 1) (leaf 6))) 
-                       (node 11 (node 9 (leaf 5) (leaf 10)) (node 13 (leaf 12) (leaf 14))))) false))
+                       (node 11 (node 9 (leaf 5) (leaf 10)) (node 13 (leaf 12) (leaf 14))))) false)
+  (test (sorted? (node 9 
+                       (node 7 (node 11 (node 1 (leaf 0) (leaf 10)) (node 5 (leaf 4) (leaf 6))) (leaf 8)) 
+                       (node 17 
+                             (node 20 (node 3 (leaf 2) (leaf 12)) (node 15 (leaf 14) (leaf 16))) 
+                             (node 19 (leaf 18) (leaf 13))))) #f))
