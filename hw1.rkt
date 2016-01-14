@@ -128,6 +128,18 @@
       [+inf  ()  #t]
       [bound (v) (>= v n)])))
 
+(module+ test
+  (test (bound-<= (-inf) -200) true)
+  (test (bound->= (-inf) -200) false)
+  (test (bound-<= (+inf) -200) false)
+  (test (bound->= (+inf) -200) true)
+  (test (bound-<= (bound 0) 0) true)
+  (test (bound->= (bound 0) 0) true)
+  (test (bound-<= (bound 0) 1) true)
+  (test (bound->= (bound 0) 1) false)
+  (test (bound-<= (bound 1) 0) false)
+  (test (bound->= (bound 1) 0) true))
+
 (define in-range? : (Bound number Bound -> boolean)
   (λ (lb n ub)
     (and (bound-<= lb n) (bound->= ub n))))
