@@ -8,6 +8,8 @@
   [idC (s : symbol)]
   [plusC (l : ExprC) 
          (r : ExprC)]
+  [subC (l : ExprC)
+        (r : ExprC)]
   [multC (l : ExprC)
          (r : ExprC)]
   [appC (s : symbol)
@@ -41,6 +43,12 @@
           (s-exp-symbol? (first (s-exp->list s)))
           (eq? '+ (s-exp->symbol (first (s-exp->list s)))))
      (plusC (parse (second (s-exp->list s)))
+            (parse (third (s-exp->list s))))]
+    [(and (s-exp-list? s) 
+          (= 3 (length (s-exp->list s)))
+          (s-exp-symbol? (first (s-exp->list s)))
+          (eq? '- (s-exp->symbol (first (s-exp->list s)))))
+     (subC (parse (second (s-exp->list s)))
             (parse (third (s-exp->list s))))]
     [(and (s-exp-list? s)
           (= 3 (length (s-exp->list s)))
@@ -90,7 +98,7 @@
           (let [(args(map s-exp->symbol 
                (rest (s-exp->list (second (s-exp->list s))))))]
             (if (duplicates? args)
-                (error 'parse-func "duplicate argument names")
+                (error 'parse-func "bad syntax")
                 args))
           ;(s-exp->symbol (second (s-exp->list (second (s-exp->list s)))))
           (parse (third (s-exp->list s))))]
@@ -125,6 +133,11 @@
         (fdC 'five empty (numC 5)))
   (test/exn (parse-fundef '{def {f (list x)} x})
             "invalid input")
+  (test (parse-fundef '{define {f x y} x})
+        (fdC 'f (list 'x 'y) (idC 'x)))
+  (test/exn (parse-fundef '{define {add3 a b a} '{+ a {+ b a}}})
+        "bad syntax")
+  
 
   (define double-def
     (parse-fundef '{define {double x} {+ x x}}))
@@ -145,12 +158,12 @@
     [numC (n) n]
     [idC (s) (error 'interp "free variable")]
     [plusC (l r) (+ (interp l fds) (interp r fds))]
+    [subC (l r) (- (interp l fds) (interp r fds))]
     [multC (l r) (* (interp l fds) (interp r fds))]
     [appC (s args) (local [(define fd (get-fundef s fds))]
                     (interp (subst (map (λ (a)
                                           (numC (interp a fds)))
                                         args)
-                             ;(numC (interp args fds))
                                    (fdC-arg fd)
                                    (fdC-body fd))
                             fds))]))
@@ -186,9 +199,15 @@
   (test (interp (parse '{double2 8})
                 (list double-def double2-def quadruple-def sub-def))
         16)
-  (test/exn (interp (parse '{add3 5 4 3})
-                    (list (parse-fundef '{define {add3 a b a} '{+ a {+ b a}}})))
-            "duplicate argument names"))
+  (test (interp (parse '{f 1 2})
+                (list (parse-fundef '{define {f x y} {+ x y}})))
+        3)
+  (test (interp (parse '{+ {f} {f}})
+                (list (parse-fundef '{define {f} 5})))
+        10)
+  (test/exn (interp (parse '{f 1})
+                    (list (parse-fundef '{define {f x y} {+ x y}})))
+            "wrong arity"))
 
 ;; get-fundef ----------------------------------------
 (define (get-fundef [s : symbol] [fds : (listof FunDefC)]) : FunDefC
@@ -230,15 +249,23 @@
                  in)]
     [plusC (l r) (plusC (subst-one what for l)
                         (subst-one what for r))]
+    [subC (l r) (subC (subst-one what for l)
+                        (subst-one what for r))]
     [multC (l r) (multC (subst-one what for l)
                         (subst-one what for r))]
     [appC (s args) (appC s (map (λ (a)
                                   (subst-one what for a))
-                                args))]));(subst what for args))]))
+                                args))]))
 
 (module+ test
   (test (subst (list (parse '8)) (list 'x) (parse '9))
         (numC 9))
+  (test (subst (list (parse '8) (parse '9)) (list 'x 'y) (parse '{- x y}))
+        (parse '{- 8 9}))
+  (test (subst (list (parse '8) (parse '9)) (list 'x 'y) (parse `x))
+        (parse '8))
+  (test (subst (list (parse '1) (parse '2) (parse '3)) (list 'x 'y 'z) (parse '{- x {+ y z}}))
+        (parse '{- 1 {+ 2 3}}))
   (test (subst (list (parse '8)) (list 'x) (parse `x))
         (numC 8))
   (test (subst (list (parse '8)) (list 'x) (parse `y))
