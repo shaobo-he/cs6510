@@ -13,7 +13,9 @@
   [multC (l : ExprC)
          (r : ExprC)]
   [appC (s : symbol)
-        (arg : ExprCs)])
+        (arg : ExprCs)]
+  [maybe-appC (s : symbol)
+              (arg : ExprCs)])
 
 (define-type FunDefC
   [fdC (name : symbol) 
@@ -25,6 +27,7 @@
 ;; - symbol
 ;; - (list '+ expr-S-expr expr-S-expr)
 ;; - (list '* expr-S-expr expr-S-expr)
+;; - (list '- expr-S-expr expr-S-expr)
 ;; - (list symbol expr-S-expr)
 
 ;; A fundef-S-exp is
@@ -56,6 +59,13 @@
           (eq? '* (s-exp->symbol (first (s-exp->list s)))))
      (multC (parse (second (s-exp->list s)))
             (parse (third (s-exp->list s))))]
+    [(and (s-exp-list? s)
+          (<= 2 (length (s-exp->list s)))
+          (s-exp-symbol? (first (s-exp->list s)))
+          (eq? 'maybe-call (s-exp->symbol (first (s-exp->list s)))))
+     (maybe-appC (s-exp->symbol (second (s-exp->list s)))
+                 (map parse
+                      (rest (rest (s-exp->list s)))))]
     [(and (s-exp-list? s) 
           (<= 1 (length (s-exp->list s))) ; Application may not require an arg
           (s-exp-symbol? (first (s-exp->list s))))
@@ -100,7 +110,6 @@
             (if (duplicates? args)
                 (error 'parse-func "bad syntax")
                 args))
-          ;(s-exp->symbol (second (s-exp->list (second (s-exp->list s)))))
           (parse (third (s-exp->list s))))]
     [else (error 'parse-fundef "invalid input")]))
 
@@ -122,7 +131,7 @@
         (appC 'double (list (numC 9))))
   (test/exn (parse '{{+ 1 2}})
             "invalid input")
-
+  
   (test (parse-fundef '{define {double x} {+ x x}})
         (fdC 'double (list 'x) (plusC (idC 'x) (idC 'x))))
   (test (parse-fundef '{define {sub x y} {+ x {* -1 y}}})
@@ -161,18 +170,37 @@
     [idC (s) (error 'interp "free variable")]
     [plusC (l r) (+ (interp l fds) (interp r fds))]
     [subC (l r) (- (interp l fds) (interp r fds))]
-    [multC (l r) (* (interp l fds) (interp r fds))]
+    [multC (l r) (let [(l-eval (interp l fds))]
+                   (if (equal? 0 l-eval)
+                       0
+                       (* l-eval (interp r fds))))]
     [appC (s args) (local [(define fd (get-fundef s fds))]
                     (interp (subst (map (λ (a)
                                           (numC (interp a fds)))
                                         args)
                                    (fdC-arg fd)
                                    (fdC-body fd))
-                            fds))]))
+                            fds))]
+    [maybe-appC (s args) (local [(define fd (maybe-get-fundef s fds))]
+                           (local [(define-values (found func) fd)]
+                             (if (not found)
+                                 0
+                                 (interp (subst (map (λ (a)
+                                                       (numC (interp a fds)))
+                                                     args)
+                                                (fdC-arg func)
+                                                (fdC-body func))
+                                         fds))))]))
 
 (module+ test
   (test (interp (parse '2) empty)
         2)
+  (test (interp (parse '{* 2 1}) empty)
+        2)
+  (test (interp (parse '{* 0 1}) empty)
+        0)
+  (test (interp (parse '{* 1 0}) empty)
+        0)
   (test/exn (interp (parse `x) empty)
             "free variable")
   (test (interp (parse '{+ 2 1}) empty)
@@ -211,15 +239,28 @@
         10)
   (test/exn (interp (parse '{f 1})
                     (list (parse-fundef '{define {f x y} {+ x y}})))
-            "wrong arity"))
+            "wrong arity")
+  (test (parse '{maybe-call five})
+        (maybe-appC 'five empty))
+  (test (interp (parse '{maybe-call five}) (list sub-def))
+        0)
+  (test (interp (parse '{maybe-call five}) (list five-def))
+        5))
 
 ;; get-fundef ----------------------------------------
 (define (get-fundef [s : symbol] [fds : (listof FunDefC)]) : FunDefC
+  (let [(result (maybe-get-fundef s fds))]
+    (local [(define-values (found value) result)]
+      (if found
+          value
+          (error 'get-fundef "undefined function")))))
+
+(define (maybe-get-fundef [s : symbol] [fds : (listof FunDefC)]) : (boolean * FunDefC)
   (cond
-    [(empty? fds) (error 'get-fundef "undefined function")]
+    [(empty? fds) (values #f (fdC 'junk empty (numC 0)))]
     [(cons? fds) (if (eq? s (fdC-name (first fds)))
-                     (first fds)
-                     (get-fundef s (rest fds)))]))
+                     (values #t (first fds))
+                     (maybe-get-fundef s (rest fds)))]))
 
 (module+ test
   (test (get-fundef 'double (list double-def))
@@ -259,7 +300,10 @@
                         (subst-one what for r))]
     [appC (s args) (appC s (map (λ (a)
                                   (subst-one what for a))
-                                args))]))
+                                args))]
+    [maybe-appC (s args) (maybe-appC s (map (λ (a)
+                                              (subst-one what for a))
+                                            args))]))
 
 (module+ test
   (test (subst (list (parse '8)) (list 'x) (parse '9))
