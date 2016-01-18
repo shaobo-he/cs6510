@@ -74,16 +74,10 @@
                 (rest (s-exp->list s))))]
     [else (error 'parse "invalid input")]))
 
-(define (contains? [name : symbol] [args : Args]) : boolean
-  (cond
-    [(empty? args) #f]
-    [(cons? args) (or (equal? name (first args))
-                      (contains? name (rest args)))]))
-
 (define (duplicates? [args : Args]) : boolean
   (cond
     [(empty? args) #f]
-    [(cons? args) (or (contains? (first args)
+    [(cons? args) (or (member (first args)
                                  (rest args))
                       (duplicates? (rest args)))]))
 
