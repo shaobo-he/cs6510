@@ -180,6 +180,8 @@
 (module+ test
   (test (interp (parse '2) empty)
         2)
+  (test (interp (parse '{* 0 z}) empty)
+        0)
   (test (interp (parse '{* 2 1}) empty)
         2)
   (test (interp (parse '{* 0 1}) empty)
@@ -252,7 +254,7 @@
   (test/exn (get-fundef 'double empty)
             "undefined function"))
 
-;; subst ----------------------------------------
+;; subst ---------------------------------------
 (define (subst [what : ExprCs] [for : Args] [in : ExprC]) : ExprC
   (cond
     [(and (empty? what) (empty? for)) in]
