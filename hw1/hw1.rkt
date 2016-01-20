@@ -71,11 +71,6 @@
         #f)
   )
 
-(define-type Record
-  [sortr (sorted : boolean)
-         (left   : number )
-         (right  : number )])
-
 #;(define sorted? : (Tree -> boolean)
   (λ (T)
     (type-case Tree T
@@ -94,17 +89,11 @@
   (λ (t)
     (type-case Tree t
       [leaf (v) (values #t v v)]
-      [node (v l r) (let [(l-result 
-                           (sorted-real? l))
-                          (r-result
-                           (sorted-real? r))]
+      [node (v l r) (let [(l-result (sorted-real? l))
+                          (r-result (sorted-real? r))]
                       (local  
-                        [(define-values
-                           (l-sorted l-min l-max)
-                           l-result)
-                         (define-values
-                           (r-sorted r-min r-max)
-                           r-result)]
+                        [(define-values (l-sorted l-min l-max) l-result)
+                         (define-values (r-sorted r-min r-max) r-result)]
                         (values (and l-sorted (>= v l-max)
                                      r-sorted (<= v r-min))
                                 l-min r-max)))])))
