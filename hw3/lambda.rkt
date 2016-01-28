@@ -6,7 +6,9 @@
   [numV (n : number)]
   [closV (arg : symbol)
          (body : ExprC)
-         (env : Env)])
+         (env : Env)]
+  [delayV (body : ExprC)
+          (env : Env)])
 
 (define-type ExprC
   [numC (n : number)]
@@ -27,7 +29,9 @@
         (arg : ExprC)]
   [ifC (cond : ExprC)
        (then : ExprC)
-       (else : ExprC)])
+       (else : ExprC)]
+  [delayC (body : ExprC)]
+  [forceC (delay : ExprC)])
 
 (define-type Binding
   [bind (name : symbol)
@@ -71,6 +75,10 @@
        (letC (s-exp->symbol (first bs))
              (parse (second bs))
              (parse (third (s-exp->list s)))))]
+    [(s-exp-match? '{delay ANY} s)
+     (delayC (parse (second (s-exp->list s))))]
+    [(s-exp-match? '{force ANY} s)
+     (forceC (parse (second (s-exp->list s))))]
     [(s-exp-match? '{lambda {SYMBOL} ANY} s)
      (lamC (s-exp->symbol (first (s-exp->list 
                                   (second (s-exp->list s)))))
@@ -133,6 +141,10 @@
                                             (interp arg env))
                                       c-env))]
                       [else (error 'interp "not a function")])]
+    [delayC (body) (delayV body env)] ;; Capture the environment at the time of creation.
+    [forceC (delayed) (type-case Value (interp delayed env) ;; Interpret the allegedly delayed expression in this env.
+                        [delayV (body d-env) (interp body d-env)] ;; Evaluate the delay in its environment.
+                        [else (error 'interp "not a thunk")])]
     [ifC (c t e) (let ([condition (interp c env)])
                    (type-case Value condition
                      [boolV (p) (if p
@@ -141,6 +153,32 @@
                      [else (error 'interp "not a boolean")]))]))
 
 (module+ test
+  (test (interp (parse '{delay {+ 1 {lambda {x} x}}}) mt-env)
+        (delayV (parse '{+ 1 {lambda {x} x}}) mt-env))
+  (test/exn (interp (parse '{force {delay {+ 1 {lambda {x} x}}}}) mt-env)
+        "not a number")
+  (test (interp (parse '{let {[ok {delay {+ 1 2}}]}
+                          {let {[bad {delay {+ 1 false}}]}
+                            {force ok}}}) mt-env)
+        (numV 3))
+  (test/exn (interp (parse '{let {[ok {delay {+ 1 2}}]}
+                              {let {[bad {delay {+ 1 false}}]}
+                                {force bad}}}) mt-env)
+            "not a number")
+  (test/exn (interp (parse '{force 1})
+                    mt-env)
+            "not a thunk")
+  (test (interp (parse '{force {if {= 8 8} {delay 7} {delay 9}}})
+                mt-env)
+        (interp (parse '7)
+                mt-env))
+  (test (interp (parse '{let {[d {let {[y 8]}
+                                   {delay {+ y 7}}}]}
+                          {let {[y 9]}
+                            {force d}}})
+                mt-env)
+        (interp (parse '15)
+                mt-env))
   (test (interp (parse '{if {= 2 {+ 1 1}} 7 8})
                 mt-env)
         (interp (parse '7)
