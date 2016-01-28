@@ -1,4 +1,6 @@
 #lang plai-typed
+;; Mark S. Baranowski - u0485301
+
 (print-only-errors true)
 (define-type Tree
   [leaf (num-bound : number)]
@@ -6,6 +8,7 @@
         (left : Tree)
         (right : Tree)])
 
+;; sum ------------------------------------------------------------------
 (define sum : (Tree -> number)
   (λ (t)
     (type-case Tree t
@@ -15,23 +18,25 @@
 (module+ test
   (test (sum (node 5 (leaf 6) (leaf 7))) 18)
   (test (sum (leaf 3)) 3)
-  (test (sum (node 1 (node 2 (leaf 3) (leaf 4)) ( node 5 (leaf 6) (leaf 7)))) 28))
+  (test (sum (node 1 (node 2 (leaf 3) (leaf 4)) ( node 5 (leaf 6) (leaf 7)))) 28)
+  (test (sum (node -inf.0 (leaf 1) (leaf 2))) -inf.0)
+  (test (sum (node -inf.0 (leaf +inf.0) (leaf +inf.0))) +nan.0)
+  (test (sum (node 0+7i (leaf 3) (leaf 4))) 7+7i))
 
-(define neg : (number -> number)
-  (λ (n)
-    (* -1 n)))
-
+;; negate ----------------------------------------------------------------
 (define negate : (Tree -> Tree)
   (λ (t)
     (type-case Tree t
-      [leaf (v) (leaf (neg v))]
-      [node (v l r) (node (neg v) (negate l) (negate r))])))
+      [leaf (v) (leaf (* -1 v))]
+      [node (v l r) (node (* -1 v) (negate l) (negate r))])))
 
 (module+ test
   (test (negate (node 5 (leaf 6) (leaf 7))) (node -5 (leaf -6) (leaf -7)))
   (test (negate (leaf 7)) (leaf -7))
+  (test (negate (leaf -inf.0)) (leaf +inf.0))
   (test (negate (node 5 (leaf 3) (leaf -2))) (node -5 (leaf -3) (leaf 2))))
 
+;; contains? --------------------------------------------------------------
 (define contains? : (Tree number -> boolean)
   (λ (t c)
     (type-case Tree t
@@ -45,6 +50,7 @@
   (test (contains? (node 5 (leaf 30) (node 0 (leaf 4) (leaf 3))) 4) #t)
   (test (contains? (node 5 (leaf 30) (node 0 (leaf 4) (leaf 3))) 7) #f))
 
+;; big-leaves? --------------------------------------------------------------
 (define big-leaves? : (Tree -> boolean)
   (λ (t)
     (big-leaves-real? t 0)))
@@ -53,9 +59,9 @@
   (λ (t acc)
     (type-case Tree t
       [leaf (v) (> v acc)]
-      [node (v l r) (let [(acc+v (+ acc v))]
-                      (and (big-leaves-real? l acc+v)
-                           (big-leaves-real? r acc+v)))])))
+      [node (v l r) (let [(curr-acc (+ acc v))]
+                      (and (big-leaves-real? l curr-acc)
+                           (big-leaves-real? r curr-acc)))])))
 
 (module+ test
   (test (big-leaves? (node 5 (node 3 (leaf 8) (leaf 6)) (node 5 (leaf 20) (leaf 20))))
@@ -68,93 +74,36 @@
   (test (big-leaves? (node 5 (node 3 (leaf 200) (leaf 200)) (node 5 (leaf 3) (leaf 20))))
         #f)
   (test (big-leaves? (node 5 (node 3 (leaf 200) (leaf 200)) (node 5 (leaf 20) (leaf -1))))
-        #f)
-  )
+        #f))
+;; in-range? --------------------------------------------------------------
+(define in-range? : (number number number -> boolean)
+  (λ (lb n ub)
+    (and (<= lb n) (<= n ub))))
 
-(define-type Record
-  [sortr (sorted : boolean)
-         (left   : number )
-         (right  : number )])
+(module+ test
+  (test (in-range? -inf.0 -inf.0 +inf.0) #t)
+  (test (in-range? -inf.0 0 +inf.0) #t)
+  (test (in-range? -1 0 0) #t)
+  (test (in-range? -1 -2 5) #f)
+  (test (in-range? 0 0 0) #t))
 
-#;(define sorted? : (Tree -> boolean)
-  (λ (T)
-    (type-case Tree T
-      [leaf (v) true]
-      [node (v l r) (local [(define-values 
-                              (t dont care)
-                              (sorted-real? T))]
-                      t)])))
+;; sorted? ----------------------------------------------------------------
+(define sorted? : (Tree -> boolean)
+  (λ (t)
+    (sorted-real? -inf.0 t +inf.0))) ; All trees must be in this range
 
 ;; Based on the observation that an in-order traversal is sorted iff
 ;; the left and right subtrees are sorted and the right most leaf (max)
 ;; of the left subtree is <= the node value and the left most leaf (min)
 ;; of the right subtree is >= the node value. Leaf nodes are obviously 
 ;; sorted.
-#;(define sorted-real? : (Tree -> (boolean * number * number))
-  (λ (t)
-    (type-case Tree t
-      [leaf (v) (values #t v v)]
-      [node (v l r) (let [(l-result 
-                           (sorted-real? l))
-                          (r-result
-                           (sorted-real? r))]
-                      (local  
-                        [(define-values
-                           (l-sorted l-min l-max)
-                           l-result)
-                         (define-values
-                           (r-sorted r-min r-max)
-                           r-result)]
-                        (values (and l-sorted (>= v l-max)
-                                     r-sorted (<= v r-min))
-                                l-min r-max)))])))
-
-(define-type Bound
-  [-inf] ; <= to every number
-  [+inf] ; >= to every number
-  [bound (v : number)])
-  
-(define bound-<= : (Bound number -> boolean)
-  (λ (b n)
-    (type-case Bound b
-      [-inf  ()  #t]
-      [+inf  ()  #f]
-      [bound (v) (<= v n)])))
-
-(define bound->= : (Bound number -> boolean)
-  (λ (b n)
-    (type-case Bound b
-      [-inf  ()  #f]
-      [+inf  ()  #t]
-      [bound (v) (>= v n)])))
-
-(module+ test
-  (test (bound-<= (-inf) -200) true)
-  (test (bound->= (-inf) -200) false)
-  (test (bound-<= (+inf) -200) false)
-  (test (bound->= (+inf) -200) true)
-  (test (bound-<= (bound 0) 0) true)
-  (test (bound->= (bound 0) 0) true)
-  (test (bound-<= (bound 0) 1) true)
-  (test (bound->= (bound 0) 1) false)
-  (test (bound-<= (bound 1) 0) false)
-  (test (bound->= (bound 1) 0) true))
-
-(define in-range? : (Bound number Bound -> boolean)
-  (λ (lb n ub)
-    (and (bound-<= lb n) (bound->= ub n))))
-
-(define sorted? : (Tree -> boolean)
-  (λ (t)
-    (sorted-real? (-inf) t (+inf))))
-
-(define sorted-real? : (Bound Tree Bound -> boolean)
+(define sorted-real? : (number Tree number -> boolean)
   (λ (lb t ub)
     (type-case Tree t
       [leaf (v) (in-range? lb v ub)]
       [node (v l r) (and (in-range? lb v ub)
-                         (sorted-real? lb  l (bound v))
-                         (sorted-real? (bound v) r ub))])))
+                         (sorted-real? lb l v)
+                         (sorted-real? v r ub))])))
 
 (module+ test
   (test (sorted? (node 1 
@@ -164,6 +113,14 @@
                        (node 5 
                              (leaf 6) 
                              (leaf 7)))) #f)
+  (test (sorted? (node -inf.0
+                       (leaf -inf.0)
+                       (leaf +inf.0)))
+        #t)
+  (test (sorted? (node +inf.0
+                       (leaf -inf.0)
+                       (leaf -inf.0)))
+        #f)
   (test (sorted? (leaf 1)) #t)
   (test (sorted? (node 2 
                        (leaf 1) 
