@@ -44,7 +44,10 @@
 
 (module+ test
   (print-only-errors true))
-
+#;(lamC (s-exp->symbol (first (s-exp->list 
+                                  (second (s-exp->list s)))))
+           (parse (third (s-exp->list s))))
+#;(parse (second (s-exp->list s)))
 ;; parse ----------------------------------------
 (define (parse [s : s-expression]) : ExprC
   (cond
@@ -79,16 +82,32 @@
      (delayC (parse (second (s-exp->list s))))]
     [(s-exp-match? '{force ANY} s)
      (forceC (parse (second (s-exp->list s))))]
-    [(s-exp-match? '{lambda {SYMBOL} ANY} s)
-     (lamC (s-exp->symbol (first (s-exp->list 
-                                  (second (s-exp->list s)))))
-           (parse (third (s-exp->list s))))]
-    [(s-exp-match? '{ANY ANY} s)
-     (appC (parse (first (s-exp->list s)))
-           (parse (second (s-exp->list s))))]
+    
+    [(s-exp-match? '{lambda {SYMBOL SYMBOL ...} ANY} s)
+     (let ([arg-list (s-exp->list (second (s-exp->list s)))])
+       (foldr (λ (name body)
+                (lamC (s-exp->symbol name)
+                      body)) 
+              (parse (third (s-exp->list s))) 
+              arg-list))]
+    
+    [(s-exp-match? '{ANY ANY ANY ...} s)
+           (let ([vals (reverse (rest (s-exp->list s)))])
+             (foldr (λ (exp app)
+                      (appC app
+                            (parse exp)))
+                    (parse (first (s-exp->list s))) 
+                    vals))]
     [else (error 'parse "invalid input")]))
 
 (module+ test
+  (test (parse '{f a1 a2 a3})
+        (appC (appC (appC (idC 'f) (idC 'a1)) (idC 'a2)) (idC 'a3)))
+  (test (parse '{lambda {v1 v2 v3} {+ v1 {+ v2 v3}}})
+        (lamC 'v1
+              (lamC 'v2
+                    (lamC 'v3
+                          (plusC (idC 'v1) (plusC (idC 'v2) (idC 'v3)))))))
   (test (parse `true)
         (boolC true))
   (test (parse `false)
@@ -121,18 +140,25 @@
 (define (interp [a : ExprC] [env : Env]) : Value
   (type-case ExprC a
     [numC (n) (numV n)]
+    
     [boolC (p) (boolV p)]
+    
     [idC (s) (lookup s env)]
+    
     [plusC (l r) (num+ (interp l env) (interp r env))]
+    
     [multC (l r) (num* (interp l env) (interp r env))]
+    
     [eqC   (l r) (num= (interp l env) (interp r env))]
     [letC (n rhs body)
           (interp body
                   (extend-env
                    (bind n (interp rhs env))
                    env))]
+    
     [lamC (n body)
           (closV n body env)]
+    
     [appC (fun arg) (type-case Value (interp fun env)
                       [closV (n body c-env)
                              (interp body
@@ -141,10 +167,13 @@
                                             (interp arg env))
                                       c-env))]
                       [else (error 'interp "not a function")])]
+    
     [delayC (body) (delayV body env)] ;; Capture the environment at the time of creation.
+    
     [forceC (delayed) (type-case Value (interp delayed env) ;; Interpret the allegedly delayed expression in this env.
                         [delayV (body d-env) (interp body d-env)] ;; Evaluate the delay in its environment.
                         [else (error 'interp "not a thunk")])]
+    
     [ifC (c t e) (let ([condition (interp c env)])
                    (type-case Value condition
                      [boolV (p) (if p
@@ -153,6 +182,17 @@
                      [else (error 'interp "not a boolean")]))]))
 
 (module+ test
+  (test (let ([parsed (parse '{let {[f {lambda {x y z}
+                                    {if (= x 1)
+                                        {if (= y 2)
+                                            {if (= z 3)
+                                                true
+                                                false}
+                                            false}
+                                        false}}]}
+                          {f 1 2 3}})])
+          (interp parsed mt-env))
+        (interp (parse `true) mt-env))
   (test (interp (parse '{delay {+ 1 {lambda {x} x}}}) mt-env)
         (delayV (parse '{+ 1 {lambda {x} x}}) mt-env))
   (test/exn (interp (parse '{force {delay {+ 1 {lambda {x} x}}}}) mt-env)
