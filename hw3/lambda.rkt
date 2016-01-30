@@ -48,7 +48,10 @@
 
 (module+ test
   (print-only-errors true))
-
+#;(lamC (s-exp->symbol (first (s-exp->list 
+                                  (second (s-exp->list s)))))
+           (parse (third (s-exp->list s))))
+#;(parse (second (s-exp->list s)))
 ;; parse ----------------------------------------
 (define (parse [s : s-expression]) : ExprC
   (cond
@@ -103,6 +106,7 @@
      (forceC (parse (second (s-exp->list s))))]
     
     [(s-exp-match? '{lambda {SYMBOL SYMBOL ...} ANY} s)
+<<<<<<< HEAD
      (foldr (λ (name body)
               (lamC (s-exp->symbol name)
                     body))
@@ -130,6 +134,32 @@
         (appC 
          (appC 
           (appC (idC 'f) (idC 'a1)) (idC 'a2)) (idC 'a3)))
+=======
+     (let ([arg-list (s-exp->list (second (s-exp->list s)))])
+       (foldr (λ (name body)
+                (lamC (s-exp->symbol name)
+                      body)) 
+              (parse (third (s-exp->list s))) 
+              arg-list))]
+    
+    [(s-exp-match? '{ANY ANY ANY ...} s)
+           (let ([vals (reverse (rest (s-exp->list s)))])
+             (foldr (λ (exp app)
+                      (appC app
+                            (parse exp)))
+                    (parse (first (s-exp->list s))) 
+                    vals))]
+    [else (error 'parse "invalid input")]))
+
+(module+ test
+  (test (parse '{f a1 a2 a3})
+        (appC (appC (appC (idC 'f) (idC 'a1)) (idC 'a2)) (idC 'a3)))
+  (test (parse '{lambda {v1 v2 v3} {+ v1 {+ v2 v3}}})
+        (lamC 'v1
+              (lamC 'v2
+                    (lamC 'v3
+                          (plusC (idC 'v1) (plusC (idC 'v2) (idC 'v3)))))))
+>>>>>>> 024d98ea04ae0ab676eb931ebaa1a68415186182
   (test (parse `true)
         (boolC true))
   (test (parse `false)
@@ -162,17 +192,26 @@
 (define (interp [a : ExprC] [env : Env]) : Value
   (type-case ExprC a
     [numC (n) (numV n)]
+    
     [boolC (p) (boolV p)]
+    
     [idC (s) (lookup s env)]
+    
     [plusC (l r) (num+ (interp l env) (interp r env))]
+    
     [multC (l r) (num* (interp l env) (interp r env))]
+    
     [eqC   (l r) (num= (interp l env) (interp r env))]
     [letC (n rhs body)
           (interp body
                   (extend-env
                    (bind n (interp rhs env))
                    env))]
+<<<<<<< HEAD
         
+=======
+    
+>>>>>>> 024d98ea04ae0ab676eb931ebaa1a68415186182
     [lamC (n body)
           (closV n body env)]
     
@@ -201,6 +240,7 @@
                      [else (error 'interp "not a boolean")]))]))
 
 (module+ test
+<<<<<<< HEAD
   (test (interp (parse '{letrec {[fib {lambda {a b n}
                                         {if {= n 0}
                                             a
@@ -225,6 +265,19 @@
                        (* n {fact {+ n -1}})}}]}
             {fact 10})) mt-env)
         (numV 3628800))
+=======
+  (test (let ([parsed (parse '{let {[f {lambda {x y z}
+                                    {if (= x 1)
+                                        {if (= y 2)
+                                            {if (= z 3)
+                                                true
+                                                false}
+                                            false}
+                                        false}}]}
+                          {f 1 2 3}})])
+          (interp parsed mt-env))
+        (interp (parse `true) mt-env))
+>>>>>>> 024d98ea04ae0ab676eb931ebaa1a68415186182
   (test (interp (parse '{delay {+ 1 {lambda {x} x}}}) mt-env)
         (delayV (parse '{+ 1 {lambda {x} x}}) mt-env))
   (test/exn (interp (parse '{force {delay {+ 1 {lambda {x} x}}}}) mt-env)
