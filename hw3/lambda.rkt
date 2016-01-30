@@ -106,13 +106,12 @@
      (forceC (parse (second (s-exp->list s))))]
     
     [(s-exp-match? '{lambda {SYMBOL SYMBOL ...} ANY} s)
-<<<<<<< HEAD
-     (foldr (λ (name body)
-              (lamC (s-exp->symbol name)
-                    body))
-            (parse (third (s-exp->list s)))
-            (s-exp->list (second
-                          (s-exp->list s))))]
+  (let ([arg-list (s-exp->list (second (s-exp->list s)))])
+       (foldr (λ (name body)
+                (lamC (s-exp->symbol name)
+                      body)) 
+              (parse (third (s-exp->list s))) 
+              arg-list))]
     
     [(s-exp-match? '{ANY ANY ANY ...} s)
      #;(appC (parse (first (s-exp->list s)))
@@ -134,24 +133,6 @@
         (appC 
          (appC 
           (appC (idC 'f) (idC 'a1)) (idC 'a2)) (idC 'a3)))
-=======
-     (let ([arg-list (s-exp->list (second (s-exp->list s)))])
-       (foldr (λ (name body)
-                (lamC (s-exp->symbol name)
-                      body)) 
-              (parse (third (s-exp->list s))) 
-              arg-list))]
-    
-    [(s-exp-match? '{ANY ANY ANY ...} s)
-           (let ([vals (reverse (rest (s-exp->list s)))])
-             (foldr (λ (exp app)
-                      (appC app
-                            (parse exp)))
-                    (parse (first (s-exp->list s))) 
-                    vals))]
-    [else (error 'parse "invalid input")]))
-
-(module+ test
   (test (parse '{f a1 a2 a3})
         (appC (appC (appC (idC 'f) (idC 'a1)) (idC 'a2)) (idC 'a3)))
   (test (parse '{lambda {v1 v2 v3} {+ v1 {+ v2 v3}}})
@@ -159,7 +140,6 @@
               (lamC 'v2
                     (lamC 'v3
                           (plusC (idC 'v1) (plusC (idC 'v2) (idC 'v3)))))))
->>>>>>> 024d98ea04ae0ab676eb931ebaa1a68415186182
   (test (parse `true)
         (boolC true))
   (test (parse `false)
@@ -207,11 +187,6 @@
                   (extend-env
                    (bind n (interp rhs env))
                    env))]
-<<<<<<< HEAD
-        
-=======
-    
->>>>>>> 024d98ea04ae0ab676eb931ebaa1a68415186182
     [lamC (n body)
           (closV n body env)]
     
@@ -240,7 +215,6 @@
                      [else (error 'interp "not a boolean")]))]))
 
 (module+ test
-<<<<<<< HEAD
   (test (interp (parse '{letrec {[fib {lambda {a b n}
                                         {if {= n 0}
                                             a
@@ -248,24 +222,13 @@
                           {fib 0 1 6}}) mt-env)
         (numV 8))
   
-  (test (interp (parse '{let {[f {lambda {v1 v2 v3}
-                                   {if {= v1 1}
-                                       {if {= v2 2}
-                                           {if {= v3 3}
-                                               true
-                                               false}
-                                           false}
-                                       false}}]}
-                          {f 1 2 3}}) mt-env)
-        (boolV true))
-  
   (test (interp (parse '(letrec {[fact {lambda {n}
                    {if (= n 0)
                        1
                        (* n {fact {+ n -1}})}}]}
             {fact 10})) mt-env)
         (numV 3628800))
-=======
+  
   (test (let ([parsed (parse '{let {[f {lambda {x y z}
                                     {if (= x 1)
                                         {if (= y 2)
@@ -277,26 +240,32 @@
                           {f 1 2 3}})])
           (interp parsed mt-env))
         (interp (parse `true) mt-env))
->>>>>>> 024d98ea04ae0ab676eb931ebaa1a68415186182
+  
   (test (interp (parse '{delay {+ 1 {lambda {x} x}}}) mt-env)
         (delayV (parse '{+ 1 {lambda {x} x}}) mt-env))
+  
   (test/exn (interp (parse '{force {delay {+ 1 {lambda {x} x}}}}) mt-env)
         "not a number")
+  
   (test (interp (parse '{let {[ok {delay {+ 1 2}}]}
                           {let {[bad {delay {+ 1 false}}]}
                             {force ok}}}) mt-env)
         (numV 3))
+  
   (test/exn (interp (parse '{let {[ok {delay {+ 1 2}}]}
                               {let {[bad {delay {+ 1 false}}]}
                                 {force bad}}}) mt-env)
             "not a number")
+  
   (test/exn (interp (parse '{force 1})
                     mt-env)
             "not a thunk")
+  
   (test (interp (parse '{force {if {= 8 8} {delay 7} {delay 9}}})
                 mt-env)
         (interp (parse '7)
                 mt-env))
+  
   (test (interp (parse '{let {[d {let {[y 8]}
                                    {delay {+ y 7}}}]}
                           {let {[y 9]}
@@ -304,12 +273,14 @@
                 mt-env)
         (interp (parse '15)
                 mt-env))
+  
   (test/exn (interp (parse '{let {[d {let {[y 8]}
                                    {delay {+ y x}}}]}
                           {let {[x 9]}
                             {force d}}})
                 mt-env)
         "free variable")
+  
   #;(test (interp (parse '{let {[d {let {[y 8]}
                                    {delay {+ y x}}}]}
                           {let {[x 9]}
@@ -317,10 +288,12 @@
                 mt-env)
         (interp (parse '17)
                 mt-env))
+  
   (test (interp (parse '{if {= 2 {+ 1 1}} 7 8})
                 mt-env)
         (interp (parse '7)
                 mt-env))
+  
   (test (interp (parse '{if false {+ 1 {lambda {x} x}} 9})
                 mt-env)
         (interp (parse '9)
