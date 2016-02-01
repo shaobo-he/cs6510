@@ -1,40 +1,52 @@
 #lang plai-typed
-(require plai-typed/s-exp-match)
+;; Mark S. Baranowski -- CS 6510 -- HW3
 
-;; Y combinator... such beauty
-(define Y '{{lambda {y} {lambda {F} {F {lambda {x} {{{y y} F} x}}}}} 
-            {lambda {y} {lambda {F} {F {lambda {x} {{{y y} F} x}}}}}})
+(require plai-typed/s-exp-match)
   
 (define-type Value
   [boolV (p : boolean)]
+  
   [numV (n : number)]
+  
   [closV (arg : symbol)
          (body : ExprC)
          (env : Env)]
+  
   [delayV (body : ExprC)
           (env : Env)])
 
 (define-type ExprC
   [numC (n : number)]
+  
   [boolC (p : boolean)]
+  
   [idC (s : symbol)]
+  
   [plusC (l : ExprC) 
          (r : ExprC)]
+  
   [multC (l : ExprC)
          (r : ExprC)]
+  
   [eqC   (l : ExprC)
          (r : ExprC)]
+  
   [letC (n : symbol) 
         (rhs : ExprC)
         (body : ExprC)]
+  
   [lamC (n : symbol)
         (body : ExprC)]
+  
   [appC (fun : ExprC)
         (arg : ExprC)]
+  
   [ifC (cond : ExprC)
        (then : ExprC)
        (else : ExprC)]
+  
   [delayC (body : ExprC)]
+  
   [forceC (delay : ExprC)])
 
 (define-type Binding
@@ -48,10 +60,7 @@
 
 (module+ test
   (print-only-errors true))
-#;(lamC (s-exp->symbol (first (s-exp->list 
-                                  (second (s-exp->list s)))))
-           (parse (third (s-exp->list s))))
-#;(parse (second (s-exp->list s)))
+
 ;; parse ----------------------------------------
 (define (parse [s : s-expression]) : ExprC
   (cond
@@ -90,56 +99,24 @@
              (parse (second bs))
              (parse (third (s-exp->list s)))))]
     
-    [(s-exp-match? '{letrec {[SYMBOL ANY]} ANY} s)
-     (let ([bs (s-exp->list (first
-                             (s-exp->list (second
-                                           (s-exp->list s)))))])
-       (parse `{let {[,(first bs) 
-                      (,Y {lambda {,(first bs)}
-                            ,(second bs)})]}
-                 ,(third (s-exp->list s))}))]
-    
     [(s-exp-match? '{delay ANY} s)
      (delayC (parse (second (s-exp->list s))))]
     
     [(s-exp-match? '{force ANY} s)
      (forceC (parse (second (s-exp->list s))))]
     
-    [(s-exp-match? '{lambda {SYMBOL SYMBOL ...} ANY} s)
-  (let ([arg-list (s-exp->list (second (s-exp->list s)))])
-       (foldr (λ (name body)
-                (lamC (s-exp->symbol name)
-                      body)) 
-              (parse (third (s-exp->list s))) 
-              arg-list))]
+    [(s-exp-match? '{lambda {SYMBOL} ANY} s)
+     (lamC (s-exp->symbol (first (s-exp->list 
+                                  (second (s-exp->list s)))))
+           (parse (third (s-exp->list s))))]
     
-    [(s-exp-match? '{ANY ANY ANY ...} s)
-     #;(appC (parse (first (s-exp->list s)))
-           (parse (second (s-exp->list s))))
-     (foldl (λ (arg fun)
-              (appC fun
-                    (parse arg)))
-            (appC (parse (first (s-exp->list s)))
-                  (parse (second (s-exp->list s))))
-            (rest (rest (s-exp->list s))))]
+    [(s-exp-match? '{ANY ANY} s)
+     (appC (parse (first (s-exp->list s)))
+           (parse (second (s-exp->list s))))]
     
     [else (error 'parse "invalid input")]))
 
 (module+ test
-  (test (parse '{lambda {v1 v2 v3}
-                  {+ v1 {+ v2 v3}}})
-        (lamC 'v1 (lamC 'v2 (lamC 'v3 (plusC (idC 'v1) (plusC (idC 'v2) (idC 'v3)))))))
-  (test (parse '{f a1 a2 a3})
-        (appC 
-         (appC 
-          (appC (idC 'f) (idC 'a1)) (idC 'a2)) (idC 'a3)))
-  (test (parse '{f a1 a2 a3})
-        (appC (appC (appC (idC 'f) (idC 'a1)) (idC 'a2)) (idC 'a3)))
-  (test (parse '{lambda {v1 v2 v3} {+ v1 {+ v2 v3}}})
-        (lamC 'v1
-              (lamC 'v2
-                    (lamC 'v3
-                          (plusC (idC 'v1) (plusC (idC 'v2) (idC 'v3)))))))
   (test (parse `true)
         (boolC true))
   (test (parse `false)
@@ -201,11 +178,12 @@
     
     [delayC (body) (delayV body env)] ;; Capture the environment at the time of creation.
     
-    [forceC (delayed) (type-case Value (interp delayed env) ;; Interpret the allegedly delayed expression in this env.
-                        [delayV (body d-env) (interp body d-env)] ;; Evaluate the delay in its environment.
-                        #;[delayV (body d-env)
-                                  (interp body (append d-env env))] ;; Conceivable interpretation
-                        [else (error 'interp "not a thunk")])]
+    [forceC (delayed) 
+            (type-case Value (interp delayed env) ;; Interpret the allegedly delayed expression in this env.
+              [delayV (body d-env) (interp body d-env)] ;; Evaluate the delay in its environment.
+              #;[delayV (body d-env)
+                        (interp body (append d-env env))] ;; Conceivable interpretation
+              [else (error 'interp "not a thunk")])]
     
     [ifC (c t e) (let ([condition (interp c env)])
                    (type-case Value condition
@@ -215,32 +193,30 @@
                      [else (error 'interp "not a boolean")]))]))
 
 (module+ test
-  (test (interp (parse '{letrec {[fib {lambda {a b n}
+  (test (interp (parse '{let {[a {delay {* 1 4}}]}
+                          {let {[b {delay a}]}
+                            {let {[c {delay b}]}
+                              {force {force {force c}}}}}}) mt-env)
+        (interp (parse `4) mt-env))
+  
+  (test (interp (parse '{let {[fib {lambda {a}
+                                     {lambda {b}
+                                       {lambda {n}
+                                         {lambda {fib}
+                                           {if {= n 0}
+                                               a
+                                               {{{{fib b} {+ a b}} {+ n -1}} fib}}}}}}]}
+                          {{{{fib 0} 1} 11} fib}}) mt-env)
+        (interp (parse `89) mt-env))
+  
+  (test (interp (parse '{let {[fact {lambda {n}
+                                      {lambda {fact}
                                         {if {= n 0}
-                                            a
-                                            {fib b {+ a b} {+ n -1}}}}]}
-                          {fib 0 1 6}}) mt-env)
-        (numV 8))
-  
-  (test (interp (parse '(letrec {[fact {lambda {n}
-                   {if (= n 0)
-                       1
-                       (* n {fact {+ n -1}})}}]}
-            {fact 10})) mt-env)
+                                            1
+                                            {* n {{fact {+ n -1}} fact}}}}}]}
+                          {{fact 10} fact}}) mt-env)
         (numV 3628800))
-  
-  (test (let ([parsed (parse '{let {[f {lambda {x y z}
-                                    {if (= x 1)
-                                        {if (= y 2)
-                                            {if (= z 3)
-                                                true
-                                                false}
-                                            false}
-                                        false}}]}
-                          {f 1 2 3}})])
-          (interp parsed mt-env))
-        (interp (parse `true) mt-env))
-  
+                                      
   (test (interp (parse '{delay {+ 1 {lambda {x} x}}}) mt-env)
         (delayV (parse '{+ 1 {lambda {x} x}}) mt-env))
   
