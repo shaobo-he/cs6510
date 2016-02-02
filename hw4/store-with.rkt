@@ -46,7 +46,16 @@
 
 (define-type-alias Store (listof Storage))
 (define mt-store empty)
-(define override-store cons)
+(define (override-store [c : Storage] [sto : Store]) : Store
+  (cond
+    [(cons? sto) (let ([search-l (cell-location c)]
+                       [curr-l (cell-location (first sto))])
+                   (if (eq? search-l curr-l)
+                       (cons c (rest sto))
+                       (cons (first sto)
+                             (override-store c (rest sto)))))]
+    [(empty? sto) (list c)]))
+                        
 
 (define-type Result
   [v*s (v : Value) (s : Store)])
@@ -188,6 +197,28 @@
               (interp r env sto-l))]))
 
 (module+ test
+  (test (interp (parse '{let {[a {box 1}]}
+                          {let {[b {box 2}]}
+                            {let {[c {box 3}]}
+                              {unbox b}}}}) mt-env mt-store)
+        (v*s (numV 2)
+             (override-store (cell 3 (numV 3))
+                             (override-store (cell 2 (numV 2))
+                                             (override-store (cell 1 (numV 1))
+                                                             mt-env)))))
+  (test/exn (interp (parse '{unbox 7}) mt-env mt-store)
+        "not a box")
+  (test/exn (interp (parse '{set-box! 7 8}) mt-env mt-store)
+            "not a box")
+  (test (interp (parse '{let {[b {box 1}]}
+                          {begin
+                            {set-box! b 2}
+                            {unbox b}}})
+                mt-env
+                mt-store)
+        (v*s (numV 2)
+             (override-store (cell 1 (numV 2))
+                             mt-store)))
   (test (interp (parse '2) mt-env mt-store)
         (v*s (numV 2) 
              mt-store))
