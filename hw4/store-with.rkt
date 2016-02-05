@@ -34,7 +34,10 @@
           (r : ExprC)]
   [recordC (fs : (listof FieldExp))]
   [getC (name : symbol)
-        (rec  : ExprC)])
+        (rec  : ExprC)]
+  [setC (name : symbol)
+        (rec  : ExprC)
+        (val  : ExprC)])
 
 (define-type FieldExp
   [fieldC (name : symbol)
@@ -58,17 +61,17 @@
         (val : Value)])
 
 (define-type-alias Store (listof Storage))
+
 (define mt-store empty)
+
 (define (override-store [c : Storage] [sto : Store]) : Store
   (cond
-    [(cons? sto) (let ([search-l (cell-location c)]
-                       [curr-l (cell-location (first sto))])
-                   (if (eq? search-l curr-l)
+    [(cons? sto) (if (eq? (cell-location c) 
+                          (cell-location (first sto)))
                        (cons c (rest sto))
                        (cons (first sto)
-                             (override-store c (rest sto)))))]
+                             (override-store c (rest sto))))]
     [(empty? sto) (list c)]))
-                        
 
 (define-type Result
   [v*s (v : Value) (s : Store)])
@@ -113,6 +116,12 @@
      (let ([sl (s-exp->list s)])
        (getC (s-exp->symbol (third sl))
              (parse (second sl))))]
+    
+    [(s-exp-match? '{set ANY SYMBOL ANY} s)
+     (let ([sl (s-exp->list s)])
+       (setC (s-exp->symbol (third sl))
+             (parse (second sl))
+             (parse (fourth sl))))]
     
     [(s-exp-match? '{set-box! ANY ANY} s)
      (setboxC (parse (second (s-exp->list s)))
@@ -221,25 +230,43 @@
             (with [(v-l sto-l) (interp l env sto)]
               (interp r env sto-l))]
     
-    [recordC (fs) (let([fields (process-fields fs env sto)])
-                    (v*s (recordV (fst fields)) (snd fields)))]
+    [recordC (fs) (local ([define-values [fields new-store]
+                            (process-fields fs env sto)])
+                    (v*s (recordV fields) new-store))]
     
     [getC (name expr) (with ([rec-v rec-sto] (interp expr env sto))
                             (type-case Value rec-v
-                              [recordV (fs) (v*s (get-record name fs) rec-sto)]
-                              [else (error 'interp "not a record")]))]))
+                              [recordV (fs) (v*s (let ([b (get-record name fs)])
+                                                   (fetch (boxV-l b) rec-sto))
+                                                 rec-sto)]
+                              [else (error 'interp "not a record")]))]
+    
+    [setC (name rec val) (with ([val-v val-sto] (interp val env sto))
+                               (with ([rec-r rec-sto] (interp rec env val-sto))
+                                     (type-case Value rec-r
+                                       [recordV (fs) (let ([loc (boxV-l (get-record name fs))])
+                                                       (v*s val-v
+                                                            (override-store (cell loc val-v)
+                                                                            rec-sto)))]
+                                                            
+                                       [else (error 'interp "not a record")])))]))
+                               
 
 (define (process-fields [fs : (listof FieldExp)] [env : Env] [sto : Store]) : ((listof FieldVal) * Store)
   (cond
-    [(empty? fs) (pair empty sto)]
+    [(empty? fs) (values empty sto)]
     [(cons? fs) 
-     (let ([p (process-fields (reverse (rest fs)) env sto)])
+     (local [(define-values [r-fields r-store]
+              (process-fields (reverse (rest fs)) env sto))]
        (type-case FieldExp (first fs)
          [fieldC (name exp)
-                 (with ([exp-v exp-sto] (interp exp env (snd p)))
-                       (pair (cons (fieldV name exp-v)
-                                   (fst p))
-                                 exp-sto))]))]))
+                 (with ([exp-v exp-sto] (interp exp env r-store))
+                       (let ([c (cell (new-loc exp-sto) exp-v)])
+                         (pair (cons (fieldV 
+                                      name
+                                      (boxV (cell-location c)))
+                                     r-fields)
+                               (override-store c exp-sto))))]))]))
 
 (define (get-record [name : symbol] [fields : (listof FieldVal)]) : Value
   (cond
@@ -260,6 +287,37 @@
           [boxV (v) `box])))
 
 (module+ test
+  (test/exn (interp-expr (parse '{set 7 y 7}))
+            "not a record")
+  (test (interp-expr (parse '{let {[r {record {x 1}}]}
+                               {get r x}}))
+        '1)
+  
+  (test (interp-expr (parse '{let {[r {record {x 1}}]}
+                               {begin
+                                 {set r x 5}
+                                 {get r x}}}))
+        '5)
+  
+  (test (interp-expr (parse '{let {[r {record {x 1}}]}
+                               {let {[get-r {lambda {x} r}]}
+                                 {begin
+                                   {set {get-r 0} x 6}
+                                   {get r x}}}}))
+        '6)
+  
+  (test (interp-expr (parse '{let {[g {lambda {r} {get r a}}]}
+                               {let {[s {lambda {r} {lambda {v} {set r b v}}}]}
+                                 {let {[r1 {record {a 0} {b 2}}]}
+                                   {let {[r2 {record {a 3} {b 4}}]}
+                                     {+ {get r1 b}
+                                        {begin
+                                          {{s r1} {g r2}}
+                                          {+ {begin
+                                               {{s r2} {g r1}}
+                                               {get r1 b}}
+                                             {get r2 b}}}}}}}}))
+        '5)
   (test/exn (interp-expr (parse '{get 7 x}))
             "not a record")
   (test (interp-expr (parse '{+ 1 4}))
@@ -278,14 +336,12 @@
         `function)
   (test (interp-expr (parse '{get {get {record {r {record {z 0}}}} r} z}))
         '0)
-  (test (interp (parse '{let {[x {box 0}]}
-                          {let {[r {record {a {unbox x}}}]}
-                            {begin
-                              {set-box! x 1}
-                              {get r a}}}}) mt-env mt-store)
-        (v*s (numV 0)
-             (override-store (cell 1 (numV 1)) mt-store)))
-  
+  (test (interp-expr (parse '{let {[x {box 0}]}
+                               {let {[r {record {a {unbox x}}}]}
+                                 {begin
+                                   {set-box! x 1}
+                                   {get r a}}}}))
+        '0)
   
   (test (interp (parse '{let {[a {box 1}]}
                           {let {[b {box 2}]}
