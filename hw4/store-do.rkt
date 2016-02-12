@@ -572,15 +572,6 @@
                                  fvs)))])]))
 
 ;; store operations ----------------------------------------
-
-(define mk-box*
-  (lambda (v)
-    (do ([l <- (new-loc*)]
-         [ign <- (override-store* (cell l v))])
-      (return* (boxV l)))))
-              
-    
-
 (define unbox* 
   (lambda (bx)
     (type-case Value bx
