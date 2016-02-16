@@ -1,8 +1,10 @@
 #lang plai-typed
+
 (define Y 
     '(lambda (f)
        ((lambda (x) (f (lambda (y) ((x x) y))))
         (lambda (x) (f (lambda (y) ((x x) y)))))))
+
 (module+ test
   (print-only-errors true))
 
@@ -308,7 +310,7 @@
                     [l <- (get-loc* v-bx)]
                     [ignored <- (override-store*
                                  (cell l v-v))])
-                 (return* v-v))]
+                  (return* v-v))]
       
       
       [recC (h fes) (do ([fvs <- (process-fields* fes env empty)])
