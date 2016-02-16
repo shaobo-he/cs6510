@@ -1,4 +1,11 @@
 #lang plai-typed
+(define Y 
+    '(lambda (f)
+       ((lambda (x) (f (lambda (y) ((x x) y))))
+        (lambda (x) (f (lambda (y) ((x x) y)))))))
+(module+ test
+  (print-only-errors true))
+
 (require plai-typed/s-exp-match)
 
 (define-type-alias Location number)
@@ -11,9 +18,16 @@
   [boxV (l : Location)]
   [recV (handler : ExprC)
         (env : Env)
-        (fields : (listof FieldVal))])
+        (fields : (listof FieldVal))]
+  [boolV (p : boolean)])
 
 (define-type ExprC
+  [boolC (p : boolean)]
+  [eqC (l : ExprC)
+       (r : ExprC)]
+  [ifC (c : ExprC)
+       (t : ExprC)
+       (e : ExprC)]
   [numC (n : number)]
   [idC (s : symbol)]
   [plusC (l : ExprC) 
@@ -48,7 +62,7 @@
 
 (define-type FieldVal
   [fieldVal (name : symbol)
-            (val  : Value)])
+            (l  : Location)])
 
 (define-type Binding
   [bind (name : symbol)
@@ -64,28 +78,52 @@
         (val : Value)])
 
 (define-type-alias Store (listof Storage))
+
 (define mt-store empty)
+
 (define (override-store [new : Storage] [sto : Store]) : Store
   (cond
     [(empty? sto) (list new)]
     [else
-     (type-case Storage (first sto)
-       [cell (l v) (type-case Storage new
-                     [cell (nl nv)
-                           (if (eq? nl l)
-                               (cons new (rest sto))
-                               (cons (first sto)
-                                     (override-store new (rest sto))))])])]))
+     (if (eq? (cell-location new)
+              (cell-location (first sto)))
+         (cons new (rest sto))
+         (cons (first sto) (override-store new (rest sto))))]))
+
+;; override-store tests ---------------------------------------
+(module+ test
+  (test (override-store (cell 1 (numV 2)) mt-store)
+        (list (cell 1 (numV 2))))
+  (test (override-store (cell 1 (numV 2))
+                        (override-store (cell 3 (numV 4))
+                                        mt-store))
+        (list (cell 3 (numV 4))
+              (cell 1 (numV 2))))
+  (test (override-store (cell 1 (numV 2))
+                        (override-store (cell 1 (numV 3))
+                                        mt-store))
+        (list (cell 1 (numV 2)))))
+
 
 (define-type (Result 'a)
   [v*s (v : 'a) (s : Store)])
 
-(module+ test
-  (print-only-errors true))
+
 
 ;; parse ----------------------------------------
 (define (parse [s : s-expression]) : ExprC
   (cond
+    [(s-exp-match? `true s) (boolC true)]
+    [(s-exp-match? `false s) (boolC false)]
+    [(s-exp-match? '{= ANY ANY} s)
+     (eqC (parse (second (s-exp->list s)))
+          (parse (third (s-exp->list s))))]
+    [(s-exp-match? '{if ANY ANY ANY} s)
+     (let ([ls (s-exp->list s)])
+       (ifC (parse (second ls))
+            (parse (third ls))
+            (parse (fourth ls))))]
+                   
     [(s-exp-match? `NUMBER s) (numC (s-exp->number s))]
     [(s-exp-match? `SYMBOL s) (idC (s-exp->symbol s))]
     [(s-exp-match? '{+ ANY ANY} s)
@@ -101,6 +139,16 @@
        (letC (s-exp->symbol (first bs))
              (parse (second bs))
              (parse (third (s-exp->list s)))))]
+    
+    [(s-exp-match? '{letrec {[SYMBOL ANY]} ANY} s)
+     (let* {[ls (s-exp->list s)]
+            [bs (s-exp->list (first (s-exp->list (second ls))))]
+            [f (first bs)]
+            [lam (second bs)]
+            [body (third ls)]}
+       (parse `{let {[,f (,Y (lambda (,f) ,lam))]}
+                 ,body}))]                 
+    
     [(s-exp-match? '{lambda {SYMBOL} ANY} s)
      (lamC (s-exp->symbol (first (s-exp->list 
                                   (second (s-exp->list s)))))
@@ -118,16 +166,21 @@
     
     [(s-exp-match? '{record/handle ANY {SYMBOL ANY} ...} s)
      (let ([ls (s-exp->list s)])
-       (recC (parse (second ls))
-             (map (λ (f)
+       (let ([fields (map (λ (f)
                     (fieldExp (s-exp->symbol (first (s-exp->list f)))
                               (parse (second (s-exp->list f)))))
-                  (rest (rest ls)))))]
+                  (rest (rest ls)))])
+         (if (check-rec-names fields)
+             (recC (parse (second ls))
+                   fields)
+             (error 'parse "duplicate field names"))))]
+                   
     
     [(s-exp-match? '{get ANY SYMBOL} s)
      (let ([ls (s-exp->list s)])
        (getC (parse (second ls))
              (s-exp->symbol (third ls))))]
+    
     [(s-exp-match? '{set ANY SYMBOL ANY} s)
      (let ([ls (s-exp->list s)])
        (setC (parse (second ls))
@@ -146,6 +199,8 @@
     [else (error 'parse "invalid input")]))
 
 (module+ test
+  (test/exn (parse '(record {x 1} {x 1}))
+            "duplicate field names")
   (test (parse '2)
         (numC 2))
   (test (parse `x) ; note: backquote instead of normal quote
@@ -192,6 +247,20 @@
 (define interp* : (ExprC Env -> (Store -> (Result Value)))
   (lambda (a env)
     (type-case ExprC a
+      [boolC (p) (return* (boolV p))]
+      [eqC (l r) (do ([v-l <- (interp* l env)]
+                      [v-r <- (interp* r env)])
+                   (return*(num= v-l v-r)))]
+      [ifC (c t e)
+           (do ([c <- (interp* c env)])
+             (interp*
+              (type-case Value c
+                [boolV (p) (if p
+                               t
+                               e)]
+                [else (error 'interp 
+                             "not a boolean")])
+              env))]
       [numC (n) (return* (numV n))]
       [idC (s) (return* (lookup s env))]
       [plusC (l r)
@@ -225,51 +294,43 @@
       [boxC (a)
             (do ([v <- (interp* a env)]
                  [l <- (new-loc*)]
-                 [ignored <- (override-store* (cell l v))])
+                 [ign <- (override-store* (cell l v))])
               (return* (boxV l)))]
       
       [unboxC (a)
-              (do ([a-v <- (interp* a env)]
-                   [val <- (unbox* a-v)])
+              (do ([bx <- (interp* a env)]
+                   [val <- (unbox* bx)])
                 (return* val))]
       
       [setboxC (bx val)
-               (do ([v-b <- (interp* bx env)]
-                    [v-v <- (interp* val env)])
-                 (let ([l (get-loc v-b)])
-                   (do ([ignored <- (override-store*
-                                     (cell l v-v))])
-                     (return* v-v))))]
+               (do ([v-bx <- (interp* bx env)]
+                    [v-v <- (interp* val env)]
+                    [l <- (get-loc* v-bx)]
+                    [ignored <- (override-store*
+                                 (cell l v-v))])
+                 (return* v-v))]
       
       
       [recC (h fes) (do ([fvs <- (process-fields* fes env empty)])
-                     (return* (recV h env fvs)))]
+                      (return* (recV h env fvs)))]
       
       [getC (recx name) (do ([v-rec <- (interp* recx env)])
                           (type-case Value v-rec
                             [recV (h r-env fs)
-                                  (let ([v (get-field name fs)])
-                                    (if (some? v)
-                                        (do ([val <- (unbox* (some-v v))])
-                                          (return* val))
-                                        (do ([h-val <- (interp* h r-env)])
-                                          (return* h-val))))]
+                                  (let ([l (get-field name v-rec)])
+                                    (type-case (optionof Location) l
+                                      [some (loc) (fetch* loc)]
+                                      [none () (interp* h r-env)]))]
                             [else (error 'interp "not a record")]))]
       
       [setC (recx name valx) (do ([v-rec <- (interp* recx env)]
-                                  [v-val <- (interp* valx env)])
-                               (type-case Value v-rec
-                                 [recV (h r-env fs)
-                                       (let ([b (get-field name fs)])
-                                         (if (some? b)
-                                             (do ([val <- (unbox* (some-v b))]
-                                                  [ignored <- (override-store*
-                                                               (cell (get-loc (some-v b))
-                                                                     v-val))])
-                                               (return* val))
-                                             (error 'interp "no such field")))]
-                                 [else (error 'interp "not a record")]))]
-      
+                                  [v-val <- (interp* valx env)]
+                                  [l <- (get-field* name v-rec)])
+                               (type-case (optionof Location) l
+                                 [some (loc) (do ([ign <- (override-store*
+                                                           (cell loc v-val))])
+                                               (return* v-val))]
+                                 [none () (error 'interp "no such field")]))]
       
       [errC (msg) (error 'interp msg)]
       
@@ -288,11 +349,31 @@
         [v*s (v store) 
              (type-case Value v
                [numV (n) (number->s-exp n)]
+               [boolV (p) (boolean->s-exp p)]
                [closV (n b e) `function]
                [boxV (l) `box]
                [recV (h e f) `record])]))))
 
 (module+ test
+  ;; Junk
+  (test (interp-expr (parse '{letrec {[fib {lambda {n}
+                                             {if {= n 0}
+                                                 0
+                                                 {if {= n 1}
+                                                     1
+                                                     {+ {fib {+ n -1}}
+                                                        {fib {+ n -2}}}}}}]}
+                               {fib 6}}))
+        `8)
+  (test/exn (interp-expr (parse '(if 1 2 3)))
+            "not a boolean")
+  (test (interp-expr (parse '{= 1 1}))
+        `#t)
+  (test (interp-expr (parse `true))
+        `#t)
+  (test (interp-expr (parse `false))
+        `#f)
+                                                 
   ;; Error coverage
   (test/exn (interp-expr (parse '{get 7 x}))
             "not a record")
@@ -300,11 +381,13 @@
             "not a record")
   (test/exn (interp-expr (parse '{set {record} x 7}))
             "no such field")
+  
   ;; interp-expr coverage
   (test (interp-expr (parse '{lambda {x} {x x}}))
         `function)
   (test (interp-expr (parse '{box 2}))
         `box)
+  
   ;; override-store is not functional
   (test (interp (parse '{let {[b {box 1}]}
                           {begin
@@ -344,7 +427,19 @@
         '0)
   
   ;; mutating records
-    (test (interp-expr (parse '{let {[r {record {x 1}}]}
+  (test (interp-expr (parse '{let {[b {box 0}]}
+                               {let {[r {record {x {begin
+                                                     {set-box! b {+ {unbox b} 1}}
+                                                     {unbox b}}}
+                                                {y {begin
+                                                     {set-box! b {+ {unbox b} 1}}
+                                                     {unbox b}}}
+                                                {z {begin
+                                                     {set-box! b {+ {unbox b} 1}}
+                                                     {unbox b}}}}]}
+                                 {unbox b}}}))
+        `3)
+  (test (interp-expr (parse '{let {[r {record {x 1}}]}
                                {get r x}}))
         '1)
 
@@ -373,6 +468,19 @@
                                                {get r1 b}}
                                              {get r2 b}}}}}}}}))
         '5)
+  (test (interp-expr (parse '{let {[r {record {x 5}}]}
+                               {set r x 2}}))
+        `2)
+  (test (interp-expr (parse '{let {[r {record {x 5}}]}
+                               {begin
+                                 {set r x 2}
+                                 {get r x}}}))
+        `2)
+  (test (interp-expr (parse '{let {[x 7]}
+                               {let {[r {record/handle x {y 9}}]}
+                                 {let {[x 8]}
+                                   {get r x}}}}))
+        `7)
   
   ;; Records with no such field handlers
   (test (interp-expr (parse '{let {[r {record/handle 5 {x 1}}]}
@@ -498,16 +606,23 @@
             "free variable"))
 
 ;; num+ and num* ----------------------------------------
-(define (num-op [op : (number number -> number)] [l : Value] [r : Value]) : Value
+(define (num-op [op : (number number -> 'a)]
+                [const : ('a -> Value)]
+                [l : Value] [r : Value]) : Value
   (cond
     [(and (numV? l) (numV? r))
-     (numV (op (numV-n l) (numV-n r)))]
+     (const (op (numV-n l) (numV-n r)))]
     [else
      (error 'interp "not a number")]))
+
 (define (num+ [l : Value] [r : Value]) : Value
-  (num-op + l r))
+  (num-op + numV l r))
+
 (define (num* [l : Value] [r : Value]) : Value
-  (num-op * l r))
+  (num-op * numV l r))
+
+(define (num= [l : Value] [r : Value]) : Value
+  (num-op = boolV l r))
 
 (module+ test
   (test (num+ (numV 1) (numV 2))
@@ -539,20 +654,51 @@
         (numV 8)))
 
 ;; box operations ------------------------------------------
+(define unbox* 
+  (lambda (bx)
+    (type-case Value bx
+      [boxV (l)
+            (fetch* l)]
+      [else (error 'unbox "not a box")])))
+
+(define get-loc*
+  (λ (v)
+    (λ (sto)
+      (v*s (get-loc v) sto))))
+
 (define (get-loc [box : Value]) : Location
   (type-case Value box
     [boxV (l) l]
     [else (error 'get-loc "not a box")]))
 
 ;; record operations ---------------------------------------
-(define (get-field [name : symbol] [fields : (listof FieldVal)]) : (optionof Value)
+(define (check-rec-names [fs : (listof FieldExp)]) : boolean
+  (cond
+    [(empty? fs) true]
+    [(cons? fs) (let ([name (fieldExp-name (first fs))])
+                  (and (not (member name (map (λ (f)
+                                                (fieldExp-name f))
+                                              (rest fs))))
+                       (check-rec-names (rest fs))))]))
+
+(define get-field*
+  (λ (n r)
+    (λ (sto)
+      (v*s (get-field n r) sto))))
+
+(define (get-field [name : symbol] [rec : Value]) : (optionof Location)
+  (type-case Value rec
+    [recV (h e fs) (get-field-r name fs)]
+    [else (error 'interp "not a record")]))
+
+(define (get-field-r [name : symbol] [fields : (listof FieldVal)]) : (optionof Location)
   (cond
     [(empty? fields) (none)]
     [(cons? fields) (type-case FieldVal (first fields)
                       [fieldVal (n v)
                                 (if (eq? n name)
                                     (some v)
-                                    (get-field name (rest fields)))])]))
+                                    (get-field-r name (rest fields)))])]))
 
 (define (process-fields* [fes : (listof FieldExp)] 
                          [env : Env]
@@ -568,26 +714,11 @@
              [ign <- (override-store* (cell l fv))])
           (process-fields* (rest fes)
                            env 
-                           (cons (fieldVal name (boxV l))
+                           (cons (fieldVal name l)
                                  fvs)))])]))
 
 ;; store operations ----------------------------------------
-
-(define mk-box*
-  (lambda (v)
-    (do ([l <- (new-loc*)]
-         [ign <- (override-store* (cell l v))])
-      (return* (boxV l)))))
-              
     
-
-(define unbox* 
-  (lambda (bx)
-    (type-case Value bx
-      [boxV (l)
-            (fetch* l)]
-      [else (error 'unbox "not a box")])))
-
 (define (return* v)
   (lambda (sto)
     (v*s v sto)))
