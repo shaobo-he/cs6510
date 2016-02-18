@@ -12,7 +12,8 @@
 (define-type Thunk
   [delay (body : ExprC)
          (env : Env)
-         (done : (boxof (optionof Value)))])
+         (done : (boxof (optionof Value)))]
+  [¬delay])
 
 (define-type ExprC
   [numC (n : number)]
@@ -40,6 +41,7 @@
   [letrecC (name : symbol)
            (rhs  : ExprC)
            (body : ExprC)])
+  
 
 (define-type Binding
   [bind (name : symbol)
@@ -48,6 +50,17 @@
                                 ;; environment in such a way
                                 ;; that the thunk has this
                                 ;; binding in its environment.
+
+;; (letrec ([y y]) y) throws the interpreter into an infinite
+;; loop. Can we prevent this? No. In order to detect that y is
+;; undefined, we'd need to find out what y is, but then we'd
+;; be evaluating the rhs which is not lazy.
+;;
+;; Interestingly, Haskell's equivalent program
+;; let y = y in y
+;; fails at runtime with a <<loop>> error. This is due to
+;; runtime machinery which detects some, but not all,
+;; loops.
 
 (define-type-alias Env (listof Binding))
 
@@ -183,7 +196,7 @@
                 [consV (cart cdrt) (force cdrt)]
                 [else (error 'interp "not a list")])]
     [letrecC (name rhs body)
-             (let ([b (box (delay (numC 42) mt-env (box (none))))])
+             (let ([b (box (¬delay))])
                (let ([new-env (extend-env
                                (bind name b)
                                env)])
@@ -329,18 +342,17 @@
                  {+ x x}}}))
           '2)
   (test (interp-expr 
-          (parse
-            '{letrec {[l {cons 1 l}]}
-               {letrec {[list-ref
-                         {lambda {l}
-                          {lambda {n}
+         (parse
+          '{letrec {[l {cons 1 l}]}
+             {letrec {[list-ref
+                       {lambda {l}
+                         {lambda {n}
                            {if0 n
                                 {first l}
                                 {{list-ref {rest l}} {+ n -1}}}}}]}
-                 {+ {{list-ref l} 42}
-                    {{list-ref l} 79}}}}))
-          '2)
-
+               {+ {{list-ref l} 42}
+                  {{list-ref l} 79}}}}))
+        '2)
   
   ;; Stock tests
   (test (interp (parse '2) mt-env)
@@ -410,9 +422,12 @@
                              (begin
                                (set-box! d (some v))
                                v))]
-                     [some (v) v])]))
+                     [some (v) v])]
+    [¬delay () (error 'interp "something's wrong")]))
 
 (module+ test
+  (test/exn (force (¬delay))
+            "something's wrong")
   (test (force (delay (numC 8) mt-env (box (none))))
         (numV 8))
   (test (let ([v (delay (numC 8) mt-env (box (none)))])
