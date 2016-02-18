@@ -1,6 +1,13 @@
 #lang plai-typed
 (require plai-typed/s-exp-match)
 
+(define (append [name : s-expression])
+    `(lambda (a)
+       (lambda (b)
+         (if0 (cons? a)
+              (cons (first a) ((,name (rest a)) b))
+              (cons a b)))))
+
 (define-type Value
   [numV (n : number)]
   [closV (arg : symbol)
@@ -37,12 +44,13 @@
   [carC (l : ExprC)]
   ;; +
   [cdrC (l : ExprC)]
+  ;; ++
+  [cons?C  (l : ExprC)]
   ;; +
   [letrecC (name : symbol)
            (rhs  : ExprC)
            (body : ExprC)])
   
-
 (define-type Binding
   [bind (name : symbol)
         (val : (boxof Thunk))]) ;; Obnoxious, but this allows
@@ -131,6 +139,10 @@
     [(s-exp-match? '{rest ANY} s)
      (cdrC (parse (second (s-exp->list s))))]
 
+    ;; cons?
+    [(s-exp-match? '{cons? ANY} s)
+     (cons?C (parse (second (s-exp->list s))))]
+
     ;; app
     [(s-exp-match? '{ANY ANY} s)
      (appC (parse (first (s-exp->list s)))
@@ -195,6 +207,9 @@
     [cdrC (l) (type-case Value (interp l env)
                 [consV (cart cdrt) (force cdrt)]
                 [else (error 'interp "not a list")])]
+    [cons?C (l) (type-case Value (interp l env)
+                  [consV (cart cdrt) (numV 0)]
+                  [else (numV 1)])]
     [letrecC (name rhs body)
              (let ([b (box (¬delay))])
                (let ([new-env (extend-env
@@ -212,6 +227,30 @@
 
 (module+ test
   (define dumb '{{lambda {x} y} 7})
+  
+  (test (interp-expr (parse '{cons? (cons 1 2)}))
+        `0)
+  (test (interp-expr (parse '{cons? 1}))
+        `1)
+  (test (interp-expr (parse `(letrec ([append ,(append `append)])
+                               (first ((append
+                                        (cons 1 2))
+                                       (cons 3 4))))))
+        `1)
+  
+  (test (interp-expr (parse `(letrec ([append ,(append `append)])
+                               (first (rest ((append (cons 1 2)) (cons 3 4)))))))
+        `2)
+  (test (interp-expr (parse `(letrec ([append ,(append `append)])
+                               (first (rest (rest ((append (cons 1 2)) (cons 3 4))))))))
+        `3)
+  (test (interp-expr (parse `(letrec ([append ,(append `append)])
+                               (rest (rest (rest ((append (cons 1 2)) (cons 3 4))))))))
+        `4)
+  (test/exn (interp-expr (parse `(letrec ([append ,(append `append)])
+                                   (first (rest (rest (rest ((append (cons 1 2)) (cons 3 4)))))))))
+            "not a list")
+  
   
   ;; New tests
   (test (interp-expr (parse '{lambda {_} x}))
