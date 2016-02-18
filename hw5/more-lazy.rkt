@@ -8,7 +8,7 @@
          (env : Env)]
   [consV (car : Thunk)
          (cdr : Thunk)])
-
+                                
 (define-type Thunk
   [delay (body : ExprC)
          (env : Env)
@@ -25,20 +25,29 @@
         (body : ExprC)]
   [appC (fun : ExprC)
         (arg : ExprC)]
+  ;; missing
   [if0C (c : ExprC)
         (t : ExprC)
         (e : ExprC)]
+  ;; +
   [consC (car : ExprC)
          (cdr : ExprC)]
+  ;; +
   [carC (l : ExprC)]
+  ;; +
   [cdrC (l : ExprC)]
+  ;; +
   [letrecC (name : symbol)
            (rhs  : ExprC)
            (body : ExprC)])
 
 (define-type Binding
   [bind (name : symbol)
-        (val : Thunk)])
+        (val : (boxof Thunk))]) ;; Obnoxious, but this allows
+                                ;; us to add a binding to the
+                                ;; environment in such a way
+                                ;; that the thunk has this
+                                ;; binding in its environment.
 
 (define-type-alias Env (listof Binding))
 
@@ -83,9 +92,9 @@
              (parse (second bs))))]
 
     ;; letrec
-    [(s-exp-match? '{let {[SYMBOL ANY]} ANY} s)
+    [(s-exp-match? '{letrec {[SYMBOL ANY]} ANY} s)
      (let* ([ls (s-exp->list s)]
-            [nv (s-exp->list (second ls))])
+            [nv (s-exp->list (first (s-exp->list (second ls))))])
        (letrecC (s-exp->symbol (first nv))
                 (parse (second nv))
                 (parse (third ls))))]
@@ -154,7 +163,7 @@
                       [closV (n body c-env)
                              (interp body
                                      (extend-env
-                                      (bind n (delay arg env (box (none))))
+                                      (bind n (box (delay arg env (box (none)))))
                                       c-env))]
                       [else (error 'interp "not a function")])]
     [if0C (c t e) (type-case Value (interp c env)
@@ -173,7 +182,14 @@
     [cdrC (l) (type-case Value (interp l env)
                 [consV (cart cdrt) (force cdrt)]
                 [else (error 'interp "not a list")])]
-    [letrecC (n r b) (numV 2)]))
+    [letrecC (name rhs body)
+             (let ([b (box (delay (numC 42) mt-env (box (none))))])
+               (let ([new-env (extend-env
+                               (bind name b)
+                               env)])
+                 (begin
+                   (set-box! b (delay rhs new-env (box (none))))
+                   (interp body new-env))))]))
 
 (define (interp-expr [a : ExprC])
   (type-case Value (interp a mt-env)
@@ -298,7 +314,32 @@
                  ;; Call list-ref on infinite list:
                  {{list-ref 4} {nats-from 2}}}}}))
         '6)
-
+  
+  ;; letrec
+  (test (interp-expr 
+          (parse
+           '{letrec {[x 1]}
+              {letrec {[y 2]}
+                {+ x y}}}))
+         '3)
+  (test (interp-expr 
+          (parse
+            '{letrec {[x 1]}
+               {letrec {[y y]}
+                 {+ x x}}}))
+          '2)
+  (test (interp-expr 
+          (parse
+            '{letrec {[l {cons 1 l}]}
+               {letrec {[list-ref
+                         {lambda {l}
+                          {lambda {n}
+                           {if0 n
+                                {first l}
+                                {{list-ref {rest l}} {+ n -1}}}}}]}
+                 {+ {{list-ref l} 42}
+                    {{list-ref l} 79}}}}))
+          '2)
 
   
   ;; Stock tests
@@ -307,7 +348,7 @@
   (test/exn (interp (parse `x) mt-env)
             "free variable")
   (test (interp (parse `x) 
-                (extend-env (bind 'x (delay (numC 9) mt-env (box (none)))) mt-env))
+                (extend-env (bind 'x (box (delay (numC 9) mt-env (box (none))))) mt-env))
         (numV 9))
   (test (interp (parse '{+ 2 1}) mt-env)
         (numV 3))
@@ -382,7 +423,7 @@
   (test (force (delay (numC 8) mt-env (box (some (numV 9)))))
         (numV 9))
   (test (force (delay (idC 'x)
-                      (extend-env (bind 'x (delay (numC 9) mt-env (box (none))))
+                      (extend-env (bind 'x (box (delay (numC 9) mt-env (box (none)))))
                                   mt-env)
                       (box (none))))
         (numV 9)))
@@ -411,19 +452,19 @@
    [(empty? env) (error 'lookup "free variable")]
    [else (cond
           [(symbol=? n (bind-name (first env)))
-           (bind-val (first env))]
+           (unbox (bind-val (first env)))]
           [else (lookup n (rest env))])]))
 
 (module+ test
   (test/exn (lookup 'x mt-env)
             "free variable")
-  (test (lookup 'x (extend-env (bind 'x (delay (numC 8) mt-env (box (none)))) mt-env))
+  (test (lookup 'x (extend-env (bind 'x (box (delay (numC 8) mt-env (box (none))))) mt-env))
         (delay (numC 8) mt-env (box (none))))
   (test (lookup 'x (extend-env
-                    (bind 'x (delay (numC 9) mt-env (box (none))))
-                    (extend-env (bind 'x (delay (numC 8) mt-env (box (none)))) mt-env)))
+                    (bind 'x (box (delay (numC 9) mt-env (box (none)))))
+                    (extend-env (bind 'x (box (delay (numC 8) mt-env (box (none))))) mt-env)))
         (delay (numC 9) mt-env (box (none))))
   (test (lookup 'y (extend-env
-                    (bind 'x (delay (numC 9) mt-env (box (none))))
-                    (extend-env (bind 'y (delay (numC 8) mt-env (box (none)))) mt-env)))
+                    (bind 'x (box (delay (numC 9) mt-env (box (none)))))
+                    (extend-env (bind 'y (box (delay (numC 8) mt-env (box (none))))) mt-env)))
         (delay (numC 8) mt-env (box (none)))))
