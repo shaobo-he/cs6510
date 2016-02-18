@@ -5,7 +5,9 @@
   [numV (n : number)]
   [closV (arg : symbol)
          (body : ExprC)
-         (env : Env)])
+         (env : Env)]
+  [consV (car : Thunk)
+         (cdr : Thunk)])
 
 (define-type Thunk
   [delay (body : ExprC)
@@ -22,7 +24,17 @@
   [lamC (n : symbol)
         (body : ExprC)]
   [appC (fun : ExprC)
-        (arg : ExprC)])
+        (arg : ExprC)]
+  [if0C (c : ExprC)
+        (t : ExprC)
+        (e : ExprC)]
+  [consC (car : ExprC)
+         (cdr : ExprC)]
+  [carC (l : ExprC)]
+  [cdrC (l : ExprC)]
+  [letrecC (name : symbol)
+           (rhs  : ExprC)
+           (body : ExprC)])
 
 (define-type Binding
   [bind (name : symbol)
@@ -39,14 +51,29 @@
 ;; parse ----------------------------------------
 (define (parse [s : s-expression]) : ExprC
   (cond
+    ;; Number
     [(s-exp-match? `NUMBER s) (numC (s-exp->number s))]
+
+    ;; ID
     [(s-exp-match? `SYMBOL s) (idC (s-exp->symbol s))]
+
+    ;; +
     [(s-exp-match? '{+ ANY ANY} s)
      (plusC (parse (second (s-exp->list s)))
             (parse (third (s-exp->list s))))]
+    ;; *
     [(s-exp-match? '{* ANY ANY} s)
      (multC (parse (second (s-exp->list s)))
             (parse (third (s-exp->list s))))]
+
+    ;; if0
+    [(s-exp-match? '{if0 ANY ANY ANY} s)
+     (let ([ls (s-exp->list s)])
+       (if0C (parse (second ls))
+             (parse (third ls))
+             (parse (fourth ls))))]
+
+    ;; let
     [(s-exp-match? '{let {[SYMBOL ANY]} ANY} s)
      (let ([bs (s-exp->list (first
                              (s-exp->list (second
@@ -54,13 +81,39 @@
        (appC (lamC (s-exp->symbol (first bs))
                    (parse (third (s-exp->list s))))
              (parse (second bs))))]
+
+    ;; letrec
+    [(s-exp-match? '{let {[SYMBOL ANY]} ANY} s)
+     (let* ([ls (s-exp->list s)]
+            [nv (s-exp->list (second ls))])
+       (letrecC (s-exp->symbol (first nv))
+                (parse (second nv))
+                (parse (third ls))))]
+
+    ;; λ
     [(s-exp-match? '{lambda {SYMBOL} ANY} s)
      (lamC (s-exp->symbol (first (s-exp->list 
                                   (second (s-exp->list s)))))
            (parse (third (s-exp->list s))))]
+
+    ;; cons
+    [(s-exp-match? '{cons ANY ANY} s)
+     (let ([ls (s-exp->list s)])
+       (consC (parse (second ls)) (parse (third ls))))]
+
+    ;; first
+    [(s-exp-match? '{first ANY} s)
+     (carC (parse (second (s-exp->list s))))]
+                     
+    ;; rest
+    [(s-exp-match? '{rest ANY} s)
+     (cdrC (parse (second (s-exp->list s))))]
+
+    ;; app
     [(s-exp-match? '{ANY ANY} s)
      (appC (parse (first (s-exp->list s)))
            (parse (second (s-exp->list s))))]
+    
     [else (error 'parse "invalid input")]))
 
 (module+ test
@@ -103,9 +156,152 @@
                                      (extend-env
                                       (bind n (delay arg env (box (none))))
                                       c-env))]
-                      [else (error 'interp "not a function")])]))
+                      [else (error 'interp "not a function")])]
+    [if0C (c t e) (type-case Value (interp c env)
+                    [numV (n) (if (= n 0)
+                                  (interp t env)
+                                  (interp e env))]
+                    [else (error 'interp "not a number")])]    
+    
+    [consC (car cdr) (consV (delay car env (box (none)))
+                            (delay cdr env (box (none))))]
+    
+    [carC (l) (type-case Value (interp l env)
+                [consV (cart cdrt) (force cart)]
+                [else (error 'interp "not a list")])]
+    
+    [cdrC (l) (type-case Value (interp l env)
+                [consV (cart cdrt) (force cdrt)]
+                [else (error 'interp "not a list")])]
+    [letrecC (n r b) (numV 2)]))
+
+(define (interp-expr [a : ExprC])
+  (type-case Value (interp a mt-env)
+    [numV (n) (number->s-exp n)]
+    [closV (ig no re) `function]
+    [consV (ju nk) `cons]))
 
 (module+ test
+  (define dumb '{{lambda {x} y} 7})
+  
+  ;; New tests
+  (test (interp-expr (parse '{lambda {_} x}))
+        `function)
+  (test (interp-expr (parse '10))
+        '10)
+  (test (interp-expr (parse '{+ 10 17}))
+        '27)
+  (test (interp-expr (parse '{* 10 7}))
+        '70)
+  (test (interp-expr (parse '{{lambda {x} {+ x 12}}
+                              {+ 1 17}}))
+        '30)
+  
+  (test (interp-expr (parse '{let {[x 0]}
+                               {let {[f {lambda {y} {+ x y}}]}
+                                 {+ {f 1}
+                                    {let {[x 3]}
+                                      {f 2}}}}}))
+        '3)
+
+  (test (interp-expr (parse '{if0 0 1 2}))
+        '1)
+  (test (interp-expr (parse '{if0 1 1 2}))
+        '2)
+  (test/exn (interp-expr (parse '{if0 {lambda {x} x} 1 2}))
+            "not a number")
+  (test (interp-expr (parse '{if0 0 1 {+ {lambda {x} x} 2}}))
+        `1)
+  (test (interp-expr (parse '{if0 1 {+ {lambda {x} x} 2} 3}))
+        `3)
+  (test (interp-expr (parse '{cons 1 2}))
+        `cons)
+  (test (interp-expr (parse '{first {cons 1 2}}))
+        '1)
+  (test (interp-expr (parse '{rest {cons 1 2}}))
+        '2)
+  (test/exn (interp-expr (parse '{first 2}))
+            "not a list")
+  (test/exn (interp-expr (parse '{rest 3}))
+            "not a list")
+  (test (interp-expr (parse '(first (rest (rest {cons 1 {cons 2 {cons 3 4}}})))))
+        `3)
+
+  ;; Lazy evaluation:
+  (test (interp-expr (parse '{{lambda {x} 0}
+                              {+ 1 {lambda {y} y}}}))
+        '0)
+  (test (interp-expr (parse '{let {[x {+ 1 {lambda {y} y}}]}
+                               0}))
+        '0)
+  (test (interp-expr (parse '{first {cons 3
+                                          {+ 1 {lambda {y} y}}}}))
+        '3)
+  (test (interp-expr (parse '{rest {cons {+ 1 {lambda {y} y}}
+                                         4}}))
+        '4)
+  (test (interp-expr (parse '{first {cons 5
+                                          ;; Infinite loop:
+                                          {{lambda {x} {x x}}
+                                           {lambda {x} {x x}}}}}))
+        '5)
+  (test (interp-expr (parse `(first (rest (rest {cons ,dumb {cons ,dumb {cons 3 ,dumb}}})))))
+        `3)
+  (test (interp-expr 
+         (parse 
+          '{let {[mkrec
+                  ;; This is call-by-name mkrec
+                  ;;  (simpler than call-by-value):
+                  {lambda {body-proc}
+                    {let {[fX {lambda {fX}
+                                {body-proc {fX fX}}}]}
+                      {fX fX}}}]}
+              {let {[fib
+                     {mkrec
+                      {lambda {fib}
+                        ;; Fib:
+                        {lambda {n}
+                          {if0 n
+                               1
+                               {if0 {+ n -1}
+                                    1
+                                    {+ {fib {+ n -1}}
+                                       {fib {+ n -2}}}}}}}}]}
+                ;; Call fib on 4:
+                {fib 4}}}))
+        '5)
+
+  (test (interp-expr 
+         (parse 
+          '{let {[mkrec
+                  ;; This is call-by-name mkrec
+                  ;;  (simpler than call-by-value):
+                  {lambda {body-proc}
+                    {let {[fX {lambda {fX}
+                                {body-proc {fX fX}}}]}
+                      {fX fX}}}]}
+             {let {[nats-from
+                    {mkrec
+                     {lambda {nats-from}
+                       ;; nats-from:
+                       {lambda {n}
+                         {cons n {nats-from {+ n 1}}}}}}]}
+               {let {[list-ref
+                      {mkrec
+                       {lambda {list-ref}
+                         ;; list-ref:
+                         {lambda {n}
+                           {lambda {l}
+                             {if0 n
+                                  {first l}
+                                  {{list-ref {+ n -1}} {rest l}}}}}}}]}
+                 ;; Call list-ref on infinite list:
+                 {{list-ref 4} {nats-from 2}}}}}))
+        '6)
+
+
+  
+  ;; Stock tests
   (test (interp (parse '2) mt-env)
         (numV 2))
   (test/exn (interp (parse `x) mt-env)
@@ -155,8 +351,7 @@
                     mt-env)
             "free variable")
 
-  #;
-  (time (interp (parse '{let {[x2 {lambda {n} {+ n n}}]}
+  #;(time (interp (parse '{let {[x2 {lambda {n} {+ n n}}]}
                           {let {[x4 {lambda {n} {x2 {x2 n}}}]}
                             {let {[x16 {lambda {n} {x4 {x4 n}}}]}
                               {let {[x256 {lambda {n} {x16 {x16 n}}}]}
