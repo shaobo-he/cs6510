@@ -1,13 +1,6 @@
 #lang plai-typed
 (require plai-typed/s-exp-match)
 
-(define (append [name : s-expression])
-    `(lambda (a)
-       (lambda (b)
-         (if0 (cons? a)
-              (cons (first a) ((,name (rest a)) b))
-              (cons a b)))))
-
 (define-type Value
   [numV (n : number)]
   [closV (arg : symbol)
@@ -15,7 +8,7 @@
          (env : Env)]
   [consV (car : Thunk)
          (cdr : Thunk)])
-                                
+
 (define-type Thunk
   [delay (body : ExprC)
          (env : Env)
@@ -50,7 +43,7 @@
   [letrecC (name : symbol)
            (rhs  : ExprC)
            (body : ExprC)])
-  
+
 (define-type Binding
   [bind (name : symbol)
         (val : (boxof Thunk))]) ;; Obnoxious, but this allows
@@ -83,10 +76,10 @@
   (cond
     ;; Number
     [(s-exp-match? `NUMBER s) (numC (s-exp->number s))]
-
+    
     ;; ID
     [(s-exp-match? `SYMBOL s) (idC (s-exp->symbol s))]
-
+    
     ;; +
     [(s-exp-match? '{+ ANY ANY} s)
      (plusC (parse (second (s-exp->list s)))
@@ -95,14 +88,14 @@
     [(s-exp-match? '{* ANY ANY} s)
      (multC (parse (second (s-exp->list s)))
             (parse (third (s-exp->list s))))]
-
+    
     ;; if0
     [(s-exp-match? '{if0 ANY ANY ANY} s)
      (let ([ls (s-exp->list s)])
        (if0C (parse (second ls))
              (parse (third ls))
              (parse (fourth ls))))]
-
+    
     ;; let
     [(s-exp-match? '{let {[SYMBOL ANY]} ANY} s)
      (let ([bs (s-exp->list (first
@@ -111,7 +104,7 @@
        (appC (lamC (s-exp->symbol (first bs))
                    (parse (third (s-exp->list s))))
              (parse (second bs))))]
-
+    
     ;; letrec
     [(s-exp-match? '{letrec {[SYMBOL ANY]} ANY} s)
      (let* ([ls (s-exp->list s)]
@@ -119,34 +112,40 @@
        (letrecC (s-exp->symbol (first nv))
                 (parse (second nv))
                 (parse (third ls))))]
-
+    
     ;; λ
-    [(s-exp-match? '{lambda {SYMBOL} ANY} s)
-     (lamC (s-exp->symbol (first (s-exp->list 
-                                  (second (s-exp->list s)))))
-           (parse (third (s-exp->list s))))]
-
+    [(s-exp-match? '{lambda {SYMBOL SYMBOL ...} ANY} s)
+     (let* ([ls (s-exp->list s)]
+            [ns (s-exp->list (second ls))])
+       (foldr (λ (n lam) (lamC (s-exp->symbol n)
+                               lam))
+              (parse (third ls))
+              ns))]
+    
     ;; cons
     [(s-exp-match? '{cons ANY ANY} s)
      (let ([ls (s-exp->list s)])
        (consC (parse (second ls)) (parse (third ls))))]
-
+    
     ;; first
     [(s-exp-match? '{first ANY} s)
      (carC (parse (second (s-exp->list s))))]
-                     
+    
     ;; rest
     [(s-exp-match? '{rest ANY} s)
      (cdrC (parse (second (s-exp->list s))))]
-
+    
     ;; cons?
     [(s-exp-match? '{cons? ANY} s)
      (cons?C (parse (second (s-exp->list s))))]
-
+    
     ;; app
-    [(s-exp-match? '{ANY ANY} s)
-     (appC (parse (first (s-exp->list s)))
-           (parse (second (s-exp->list s))))]
+    [(s-exp-match? '{ANY ANY ANY ...} s)
+     (let ([ls (s-exp->list s)])
+       (foldl (λ (a acc)
+                (appC acc (parse a)))
+              (parse (first ls))
+              (rest ls)))]
     
     [else (error 'parse "invalid input")]))
 
@@ -232,25 +231,62 @@
         `0)
   (test (interp-expr (parse '{cons? 1}))
         `1)
-  (test (interp-expr (parse `(letrec ([append ,(append `append)])
-                               (first ((append
-                                        (cons 1 2))
-                                       (cons 3 4))))))
+  
+  ;; Haskellish tests
+  (test (interp-expr (parse `(letrec ([++ ,++])
+                               (first (++ (cons 1 2)
+                                          (cons 3 4))))))
+        `1)
+  (test (interp-expr (parse `(letrec ([++ ,++])
+                               (first (rest (++ (cons 1 2) (cons 3 4)))))))
+        `2)
+  (test (interp-expr (parse `(letrec ([++ ,++])
+                               (first (rest (rest (++ (cons 1 2) (cons 3 4))))))))
+        `3)
+  (test (interp-expr (parse `(letrec ([++ ,++])
+                               (rest (rest (rest (++ (cons 1 2) (cons 3 4))))))))
+        `4)
+  
+  (test (interp-expr (parse `(letrec ([++ ,++])
+                               (letrec ([l (cons 1 l)])
+                                 (first (rest (rest (rest (++ (cons 1 2) l)))))))))
         `1)
   
-  (test (interp-expr (parse `(letrec ([append ,(append `append)])
-                               (first (rest ((append (cons 1 2)) (cons 3 4)))))))
+  (test (interp-expr (parse `(letrec ([map ,(mapi `map)])
+                               (letrec ([l (cons 1 l)])
+                                 (first (rest (rest (map (lambda (n) (+ n 1)) l))))))))
         `2)
-  (test (interp-expr (parse `(letrec ([append ,(append `append)])
-                               (first (rest (rest ((append (cons 1 2)) (cons 3 4))))))))
-        `3)
-  (test (interp-expr (parse `(letrec ([append ,(append `append)])
-                               (rest (rest (rest ((append (cons 1 2)) (cons 3 4))))))))
-        `4)
-  (test/exn (interp-expr (parse `(letrec ([append ,(append `append)])
-                                   (first (rest (rest (rest ((append (cons 1 2)) (cons 3 4)))))))))
+  
+  (test/exn (interp-expr (parse `(letrec ([++ ,++])
+                                   (first (rest (rest (rest (++ (cons 1 2) (cons 3 4)))))))))
             "not a list")
   
+  (test (interp-expr (parse `(letrec ([zipWith ,(zipWithi `zipWith)])
+                               (letrec ([!! ,!!])
+                                 (letrec ([fibs (cons 0 (cons 1
+                                                              (zipWith (lambda (a)
+                                                                         (lambda (b)
+                                                                           (+ a b)))
+                                                                       fibs (rest fibs))))])
+                                   (!! fibs 20)))))) ;; Set to much higher than 20 to make
+                                                     ;; the interpreter blow up
+        `6765)
+  (test (interp-expr (parse `(letrec ([zipWith ,(zipWithi `zipWith)])
+                               (letrec ([onTheTake ,(take `onTheTake)])
+                                 (letrec ([drop ,(drop `drop)])
+                                   (letrec ([fibs (cons 0 (cons 1
+                                                                (zipWith (lambda (a)
+                                                                           (lambda (b)
+                                                                             (+ a b)))
+                                                                         fibs (rest fibs))))])
+                                     ((onTheTake 1) (drop 20 fibs))))))))
+        `cons)
+  (test (interp-expr (parse `(letrec ([foldl ,(foldli `foldl)])
+                               (foldl (lambda (acc)
+                                        (lambda (n)
+                                          (+ acc n)))
+                                      0 (cons 1 (cons 2 3))))))
+        `6)
   
   ;; New tests
   (test (interp-expr (parse '{lambda {_} x}))
@@ -271,7 +307,7 @@
                                     {let {[x 3]}
                                       {f 2}}}}}))
         '3)
-
+  
   (test (interp-expr (parse '{if0 0 1 2}))
         '1)
   (test (interp-expr (parse '{if0 1 1 2}))
@@ -294,7 +330,7 @@
             "not a list")
   (test (interp-expr (parse '(first (rest (rest {cons 1 {cons 2 {cons 3 4}}})))))
         `3)
-
+  
   ;; Lazy evaluation:
   (test (interp-expr (parse '{{lambda {x} 0}
                               {+ 1 {lambda {y} y}}}))
@@ -324,21 +360,21 @@
                     {let {[fX {lambda {fX}
                                 {body-proc {fX fX}}}]}
                       {fX fX}}}]}
-              {let {[fib
-                     {mkrec
-                      {lambda {fib}
-                        ;; Fib:
-                        {lambda {n}
-                          {if0 n
-                               1
-                               {if0 {+ n -1}
-                                    1
-                                    {+ {fib {+ n -1}}
-                                       {fib {+ n -2}}}}}}}}]}
-                ;; Call fib on 4:
-                {fib 4}}}))
+             {let {[fib
+                    {mkrec
+                     {lambda {fib}
+                       ;; Fib:
+                       {lambda {n}
+                         {if0 n
+                              1
+                              {if0 {+ n -1}
+                                   1
+                                   {+ {fib {+ n -1}}
+                                      {fib {+ n -2}}}}}}}}]}
+               ;; Call fib on 4:
+               {fib 4}}}))
         '5)
-
+  
   (test (interp-expr 
          (parse 
           '{let {[mkrec
@@ -369,17 +405,17 @@
   
   ;; letrec
   (test (interp-expr 
-          (parse
-           '{letrec {[x 1]}
-              {letrec {[y 2]}
-                {+ x y}}}))
-         '3)
+         (parse
+          '{letrec {[x 1]}
+             {letrec {[y 2]}
+               {+ x y}}}))
+        '3)
   (test (interp-expr 
-          (parse
-            '{letrec {[x 1]}
-               {letrec {[y y]}
-                 {+ x x}}}))
-          '2)
+         (parse
+          '{letrec {[x 1]}
+             {letrec {[y y]}
+               {+ x x}}}))
+        '2)
   (test (interp-expr 
          (parse
           '{letrec {[l {cons 1 l}]}
@@ -421,18 +457,18 @@
                 mt-env)
         (numV 12))
   (test (interp (parse '{let {[x 5]}
-                         {let {[y 6]}
-                          x}})
+                          {let {[y 6]}
+                            x}})
                 mt-env)
         (numV 5))
   (test (interp (parse '{{lambda {x} {+ x x}} 8})
                 mt-env)
         (numV 16))
-
+  
   (test (interp (parse '{{lambda {x} 5} {1 2}})
-                 mt-env)
+                mt-env)
         (numV 5))
-
+  
   (test/exn (interp (parse '{1 2}) mt-env)
             "not a function")
   (test/exn (interp (parse '{+ 1 {lambda {x} x}}) mt-env)
@@ -442,14 +478,14 @@
                                 {bad 2}}})
                     mt-env)
             "free variable")
-
+  
   #;(time (interp (parse '{let {[x2 {lambda {n} {+ n n}}]}
-                          {let {[x4 {lambda {n} {x2 {x2 n}}}]}
-                            {let {[x16 {lambda {n} {x4 {x4 n}}}]}
-                              {let {[x256 {lambda {n} {x16 {x16 n}}}]}
-                                {let {[x65536 {lambda {n} {x256 {x256 n}}}]}
-                                  {x65536 1}}}}}})
-                mt-env)))
+                            {let {[x4 {lambda {n} {x2 {x2 n}}}]}
+                              {let {[x16 {lambda {n} {x4 {x4 n}}}]}
+                                {let {[x256 {lambda {n} {x16 {x16 n}}}]}
+                                  {let {[x65536 {lambda {n} {x256 {x256 n}}}]}
+                                    {x65536 1}}}}}})
+                  mt-env)))
 
 ;; force ----------------------------------------
 
@@ -485,10 +521,10 @@
 ;; num+ and num* ----------------------------------------
 (define (num-op [op : (number number -> number)] [l : Value] [r : Value]) : Value
   (cond
-   [(and (numV? l) (numV? r))
-    (numV (op (numV-n l) (numV-n r)))]
-   [else
-    (error 'interp "not a number")]))
+    [(and (numV? l) (numV? r))
+     (numV (op (numV-n l) (numV-n r)))]
+    [else
+     (error 'interp "not a number")]))
 (define (num+ [l : Value] [r : Value]) : Value
   (num-op + l r))
 (define (num* [l : Value] [r : Value]) : Value
@@ -503,11 +539,11 @@
 ;; lookup ----------------------------------------
 (define (lookup [n : symbol] [env : Env]) : Thunk
   (cond
-   [(empty? env) (error 'lookup "free variable")]
-   [else (cond
-          [(symbol=? n (bind-name (first env)))
-           (unbox (bind-val (first env)))]
-          [else (lookup n (rest env))])]))
+    [(empty? env) (error 'lookup "free variable")]
+    [else (cond
+            [(symbol=? n (bind-name (first env)))
+             (unbox (bind-val (first env)))]
+            [else (lookup n (rest env))])]))
 
 (module+ test
   (test/exn (lookup 'x mt-env)
@@ -522,3 +558,60 @@
                     (bind 'x (box (delay (numC 9) mt-env (box (none)))))
                     (extend-env (bind 'y (box (delay (numC 8) mt-env (box (none))))) mt-env)))
         (delay (numC 8) mt-env (box (none)))))
+
+;; Hakellish functions
+(define (mapi [name : s-expression])
+  `(lambda (f l) ;; (a -> b) -> [a] -> [b]
+     (if0 (cons? l)
+          (cons (f (first l))
+                (,name f (rest l)))
+          (f l))))
+
+(define (zipWithi [name : s-expression])
+  `(lambda (f l1 l2) ;; (a -> b -> c) -> [a] -> [b] -> [c]
+     (if0 (cons? l1) ;; l1 and l2 better be the same length
+          (cons (f (first l1) (first l2))
+                (,name f (rest l1) (rest l2)))
+          ((f l1) l2))))
+
+(define (foldli [name : s-expression])
+  `(lambda (f acc l) ;; (b -> a -> b) -> b -> [a] -> b
+     (if0 (cons? l)
+          (,name f (f acc (first l)) (rest l))
+          (f acc l))))
+
+(define (foldri [name : s-expression])
+  `(lambda (f acc l) ;; (a -> b -> b) -> b -> [a] -> b
+     (if0 (cons? l)
+          (f (first l) (,name f acc (rest l)))
+          (f l acc))))
+
+(define (drop [name : s-expression]) ;; Mostly to view how bad laziness can be
+  `(lambda (n l) ;; Int -> [a] -> "[a]"
+     (if0 n
+          l
+          (if0 (cons? l)
+               (,name (+ n -1) (rest l))
+               1))))
+
+(define (take [name : s-expression]) ;; See how forcing can reduce the thunks
+  `(lambda (n l) ;; Int -> [a] -> "[a]"
+     (if0 n
+          1
+          (if0 (cons? l)
+               (cons (first l)
+                     (,name (+ n -1) (rest l)))
+               1))))
+(define !!
+  `(lambda (l n) ;; [a] -> Int -> a
+     (letrec ([d ,(drop `d)])
+       (letrec ([t ,(take `t)])
+         (first ((t 1) (d n l)))))))
+
+(define ++
+  `(lambda (l1 l2) ;; [a] -> [a] -> [a]
+     (letrec ([foldr ,(foldri `foldr)])
+       (foldr (lambda (f)
+                (lambda (acc)
+                  (cons f acc)))
+              l2 l1))))
