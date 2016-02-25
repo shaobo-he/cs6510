@@ -6,7 +6,8 @@
   [closV (args : (listof symbol))
          (body : ExprC)
          (env : Env)]
-  [contV (k : Cont)])
+  [contV (k : Cont)]
+  [errorV (msg : string)])
 
 (define-type ExprC
   [numC (n : number)]
@@ -26,7 +27,17 @@
         (thn : ExprC)
         (els : ExprC)]
   [avgC (ns  : (listof ExprC))
-        (len : number)])
+        (len : number)]
+  [tryC (body : ExprC)
+        (handle : ExprC)])
+
+(define-type Handler
+  [handlerH (handler : ExprC)
+            (env     : Env)
+            (k       : Cont)])
+
+(define-type-alias Handler? (optionof Handler))
+            
 
 (define-type Binding
   [bind (name : symbol)
@@ -39,35 +50,44 @@
 (define extend-env* append)
 
 (define-type Cont
-  [doneK]
+  [doneK (h : Handler?)]
   [addSecondK (r : ExprC)
               (e : Env)
-              (k : Cont)]
+              (k : Cont)
+              (h : Handler?)]
   [doAddK (v : Value)
-          (k : Cont)]
+          (k : Cont)
+          (h : Handler?)]
   [multSecondK (r : ExprC)
                (e : Env)
-               (k : Cont)]
+               (k : Cont)
+               (h : Handler?)]
   [doMultK (v : Value)
-           (k : Cont)]
-  [negK (k : Cont)]
+           (k : Cont)
+           (h : Handler?)]
+  [negK (k : Cont)
+        (h : Handler?)]
   [avgRestK (ns  :  (listof ExprC))
             (acc : Value)
             (len : number)
             (env : Env)
-            (k   : Cont)]
+            (k   : Cont)
+            (h : Handler?)]
   [appArgsK (a     : (listof ExprC))
             (fun-e : ExprC)
             (vals  : (listof Value))
             (env   : Env)
-            (k     : Cont)]
+            (k     : Cont)
+            (h : Handler?)]
   [if0K (thn : ExprC)
         (els : ExprC)
         (env : Env)
-        (k   : Cont)]
+        (k   : Cont)
+        (h : Handler?)]
         
   [doAppK (f : (listof Value))
-          (k : Cont)])
+          (k : Cont)
+          (h : Handler?)])
 
 (module+ test
   (print-only-errors true))
@@ -91,6 +111,10 @@
        (appC (lamC (list (s-exp->symbol (first bs)))
                    (parse (third (s-exp->list s))))
              (list (parse (second bs)))))]
+
+    [(s-exp-match? '{try ANY {lambda {} ANY}} s)
+     (tryC (parse (second (s-exp->list s)))
+           (parse (third (s-exp->list (third (s-exp->list s))))))]
 
     [(s-exp-match? '{neg ANY} s)
      (negC (parse (second (s-exp->list s))))]
@@ -145,99 +169,159 @@
             "invalid input"))
 
 ;; interp & continue ----------------------------------------
-(define (interp [a : ExprC] [env : Env] [k : Cont]) : Value
+(define (interp [a : ExprC] [env : Env] [k : Cont] [h : Handler?]) : Value
   (type-case ExprC a
     [numC (n) (continue k (numV n))]
-    [idC (s) (continue k (lookup s env))]
+    [idC (s) (lookup s env k h)]
     [plusC (l r) (interp l env
-                         (addSecondK r env k))]
+                         (addSecondK r env k h) h)]
     [multC (l r) (interp l env
-                         (multSecondK r env k))]
+                         (multSecondK r env k h) h)]
     [negC (n) (interp n env
-                      (negK k))]
+                      (negK k h) h)]
 
     [avgC (ns l) (cond
                    [(cons? ns) (interp (first ns) env
                                        (avgRestK (rest ns) (numV 0) l
-                                                 env k))]
+                                                 env k h) h)]
                    [else (continue k (numV 0))])]
     [lamC (ns body)
           (continue k (closV ns body env))]
     [appC (fun args)
           (cond 
           [(cons? args) (interp (first args) env
-                                (appArgsK (rest args) fun empty env k))]
+                                (appArgsK (rest args) fun empty env k h) h)]
           [else (interp fun env
-                        (doAppK empty k))])]
+                        (doAppK empty k h) h)])]
     [let/ccC (n body)
              (interp body
                      (extend-env (bind n (contV k))
                                  env)
-                     k)]
+                     k h)]
     [if0C (cnd thn els)
           (interp cnd env
-                  (if0K thn els env k))]))
+                  (if0K thn els env k h) h)]
+    [tryC (body handler)
+          (interp body env k
+                  (some (handlerH handler env (replace-handler k h))))]))
 
 (define (continue [k : Cont] [v : Value]) : Value
   (type-case Cont k
-    [doneK () v]
-    [addSecondK (r env next-k)
+    [doneK (h) v]
+    [addSecondK (r env next-k h)
                 (interp r env
-                        (doAddK v next-k))]
-    [doAddK (v-l next-k)
-            (continue next-k (num+ v-l v))]
-    [multSecondK (r env next-k)
+                        (doAddK v next-k h) h)]
+    [doAddK (v-l next-k h)
+            (num+ v-l v next-k h)]
+    [multSecondK (r env next-k h)
                 (interp r env
-                        (doMultK v next-k))]
-    [doMultK (v-l next-k)
-             (continue next-k (num* v-l v))]
-    [negK (k)
+                        (doMultK v next-k h) h)]
+    [doMultK (v-l next-k h)
+             (num* v-l v next-k h)]
+    [negK (k h)
           (type-case Value v
             [numV (n) (continue k (numV (* -1 n)))]
-            [else (error 'interp "not a number")])]
-    [avgRestK (ns acc len env next-k)
+            [else (escape h (errorV "not a number"))])]
+    [avgRestK (ns acc len env next-k h)
               (cond
                 [(cons? ns) (interp (first ns) env
-                                    (avgRestK (rest ns) (num+ acc v) len
-                                              env next-k))]
-                [else (continue next-k (num/ (num+ acc v) (numV len)))])]
-    [if0K (thn els env next-k)
+                                    (avgRestK (rest ns) (num+ acc v next-k h) len
+                                              env next-k h) h)]
+                [else (num/ (num+ acc v next-k h) (numV len) next-k h)])]
+    [if0K (thn els env next-k h)
           (type-case Value v
             [numV (n) (if (= 0 n)
-                          (interp thn env next-k)
-                          (interp els env next-k))]
-            [else (error 'interp "not a number")])]
+                          (interp thn env next-k h)
+                          (interp els env next-k h))]
+            [else (escape h (errorV "not a number"))])]
                           
-    [appArgsK (args fun vals env next-k)
+    [appArgsK (args fun vals env next-k h)
               (cond
                 [(cons? args) (interp (first args) env
                                       (appArgsK (rest args) fun (cons v vals)
-                                                env next-k))]
+                                                env next-k h) h)]
                 [else (interp fun env
-                              (doAppK (cons v vals) next-k))])]
-    [doAppK (vs next-k)
+                              (doAppK (cons v vals) next-k h) h)])]
+    [doAppK (vs next-k h)
             (type-case Value v ;; Closure now comes in as the continuation value
               [closV (ns body c-env)
                      (interp body
                              (extend-env*
                               (map2 bind ns (reverse vs))
                               c-env)
-                             next-k)]
+                             next-k h)]
               [contV (k-v) (continue k-v (first vs))]
-              [else (error 'interp "not a function")])]))
+              [else (escape h (errorV "not a function"))])]))
 
 (define interp-expr : (ExprC -> s-expression)
   (λ (e)
-    (type-case Value (interp e mt-env (doneK))
+    (type-case Value (interp e mt-env (doneK (none)) (none))
       [numV (n) (number->s-exp n)]
+      [errorV (msg) (string->s-exp msg)]
       [else `function])))
 
 (module+ test
+  ;; Try tests
+  (test (interp-expr (parse '{try {+ {lambda {} 1} 2}
+                                  {lambda {} 7}}))
+        `7)
+  (test (interp-expr (parse '{1 2}))
+        `"not a function")
+  (test (interp-expr (parse '{try {+ {try {+ {lambda {} y} x}
+                                          {lambda {} 7}}
+                                     {lambda {} 3}}
+                                  {lambda {} 2}}))
+        `2)
+  (test (interp-expr (parse '{+ {try {+ {lambda {} y} x}
+                                     {lambda {} 7}}
+                                {try {+ 2 {lambda {} z}}
+                                     {lambda {} 3}}}))
+        `10)
+  (test (interp-expr (parse '{+ x 2}))
+        `"free variable")
+
+  (test (interp-expr (parse '{try
+                              {try {+ {lambda {} 2} 3}
+                                   {lambda {} {+ 9 {lambda {} 4}}}}
+                              {lambda {} 8}}))
+        `8)
+  (test (interp-expr (parse '{try
+                              {try
+                               {try {+ {lambda {} 2} 3}
+                                    {lambda {} {+ 9 {lambda {} 4}}}}
+                               {lambda {} {+ {lambda {} 5}
+                                             6}}}
+                              {lambda {} 7}}))
+        `7)
+  (test (interp-expr (parse '{try
+                              {let/cc done
+                                {done {+ 2 {lambda {} 3}}}}
+                              {lambda {} 8}}))
+        `8)
+
+  (test (interp-expr (parse '{+ 1
+                                {+ 2
+                                   {+ {try {+ 5 {lambda {} y}}
+                                           {lambda {} 3}}
+                                      4}}}))
+        `10)
+  (test (interp-expr (parse '{try
+                              {+ 1
+                                 {+ 2
+                                    {+ {try {+ 5 {lambda {} y}}
+                                            {lambda {} 3}}
+                                       4}}}
+                              {lambda {} 11}}))
+`10)
+                                
+  
+
+  
   ;; Coverage tests
-  (test/exn (interp-expr (parse '{if0 {lambda {a} b} 0 2}))
-            "not a number")
-  (test/exn (interp-expr (parse '(neg {lambda {x} y})))
-            "not a number")
+  (test (interp-expr (parse '{if0 {lambda {a} b} 0 2}))
+        `"not a number")
+  (test (interp-expr (parse '(neg {lambda {x} y})))
+            `"not a number")
   (test (interp-expr (parse '{avg}))
         '0)
 
@@ -284,126 +368,175 @@
         '20)
   
   ;; Original tests
-  (test (interp (parse '2) mt-env (doneK))
+  (test (interp (parse '2) mt-env (doneK (none)) (none))
         (numV 2))
-  (test/exn (interp (parse `x) mt-env (doneK))
-            "free variable")
+  (test (interp (parse `x) mt-env (doneK (none)) (none))
+        (errorV "free variable"))
   (test (interp (parse `x)
                 (extend-env (bind 'x (numV 9)) mt-env)
-                (doneK))
+                (doneK (none)) (none))
         (numV 9))
-  (test (interp (parse '{+ 2 1}) mt-env (doneK))
+  (test (interp (parse '{+ 2 1}) mt-env (doneK (none)) (none))
         (numV 3))
-  (test (interp (parse '{* 2 1}) mt-env (doneK))
+  (test (interp (parse '{* 2 1}) mt-env (doneK (none)) (none))
         (numV 2))
   (test (interp (parse '{+ {* 2 3} {+ 5 8}})
                 mt-env
-                (doneK))
+                (doneK (none)) (none))
         (numV 19))
   (test (interp (parse '{lambda {x} {+ x x}})
                 mt-env
-                (doneK))
+                (doneK (none)) (none))
         (closV (list 'x) (plusC (idC 'x) (idC 'x)) mt-env))
   (test (interp (parse '{let {[x 5]}
                           {+ x x}})
                 mt-env
-                (doneK))
+                (doneK (none)) (none))
         (numV 10))
   (test (interp (parse '{let {[x 5]}
                           {let {[x {+ 1 x}]}
                             {+ x x}}})
                 mt-env
-                (doneK))
+                (doneK (none)) (none))
         (numV 12))
   (test (interp (parse '{let {[x 5]}
                           {let {[y 6]}
                             x}})
                 mt-env
-                (doneK))
+                (doneK (none)) (none))
         (numV 5))
   (test (interp (parse '{{lambda {x} {+ x x}} 8})
                 mt-env
-                (doneK))
+                (doneK (none)) (none))
         (numV 16))
 
   (test (interp (parse '{let/cc k {+ 1 {k 0}}})
                 mt-env
-                (doneK))
+                (doneK (none)) (none))
         (numV 0))
   (test (interp (parse '{let {[f {let/cc k k}]}
                           {f {lambda {x} 10}}})
                 mt-env
-                (doneK))
+                (doneK (none)) (none))
         (numV 10))
 
-  (test/exn (interp (parse '{1 2}) mt-env (doneK))
-            "not a function")
-  (test/exn (interp (parse '{+ 1 {lambda {x} x}}) mt-env (doneK))
-            "not a number")
-  (test/exn (interp (parse '{let {[bad {lambda {x} {+ x y}}]}
+  (test (interp (parse '{1 2}) mt-env (doneK (none)) (none))
+        (errorV "not a function")) 
+  (test (interp (parse '{+ 1 {lambda {x} x}}) mt-env (doneK (none)) (none))
+        (errorV "not a number"))
+  (test (interp (parse '{let {[bad {lambda {x} {+ x y}}]}
                               {let {[y 5]}
                                 {bad 2}}})
                     mt-env
-                    (doneK))
-            "free variable")
+                    (doneK (none)) (none))
+            (errorV "free variable"))
   ;; Eager:
-  (test/exn (interp (parse '{{lambda {x} 0} {1 2}}) mt-env (doneK))
-            "not a function")
+  (test (interp (parse '{{lambda {x} 0} {1 2}}) mt-env (doneK (none)) (none))
+        (errorV "not a function"))
 
-  (test (continue (doneK) (numV 5))
+  (test (continue (doneK (none)) (numV 5))
         (numV 5))
-  (test (continue (addSecondK (numC 6) mt-env (doneK)) (numV 5))
+  (test (continue (addSecondK (numC 6) mt-env (doneK (none)) (none)) (numV 5))
         (numV 11))
-  (test (continue (doAddK (numV 7) (doneK)) (numV 5))
+  (test (continue (doAddK (numV 7) (doneK (none)) (none)) (numV 5))
         (numV 12))
-  (test (continue (multSecondK (numC 6) mt-env (doneK)) (numV 5))
+  (test (continue (multSecondK (numC 6) mt-env (doneK (none)) (none)) (numV 5))
         (numV 30))
-  (test (continue (doMultK (numV 7) (doneK)) (numV 5))
+  (test (continue (doMultK (numV 7) (doneK (none)) (none)) (numV 5))
         (numV 35))
-  (test (continue (appArgsK empty (parse '{lambda {x} x}) empty mt-env (doneK)) (numV 5))
+  (test (continue (appArgsK empty (parse '{lambda {x} x}) empty mt-env (doneK (none)) (none)) (numV 5))
         (numV 5))
-  (test (continue (doAppK (list (numV 8)) (doneK)) (closV (list 'x) (idC 'x) mt-env))
+  (test (continue (doAppK (list (numV 8)) (doneK (none)) (none)) (closV (list 'x) (idC 'x) mt-env))
         (numV 8)))
 
 ;; num+ and num* ----------------------------------------
-(define (num-op [op : (number number -> number)] [l : Value] [r : Value]) : Value
+(define (num-op [op : (number number -> number)] [l : Value] [r : Value] [k : Cont] [h : Handler?]) : Value
   (cond
    [(and (numV? l) (numV? r))
-    (numV (op (numV-n l) (numV-n r)))]
+    (continue k (numV (op (numV-n l) (numV-n r))))]
    [else
-    (error 'interp "not a number")]))
-(define (num+ [l : Value] [r : Value]) : Value
-  (num-op + l r))
-(define (num* [l : Value] [r : Value]) : Value
-  (num-op * l r))
-(define (num/ [l : Value] [r : Value]) : Value
-  (num-op / l r))
+    (escape h (errorV "not a number"))]))
+(define (num+ [l : Value] [r : Value] [k : Cont] [h : Handler?]) : Value
+  (num-op + l r k h))
+(define (num* [l : Value] [r : Value] [k : Cont] [h : Handler?]) : Value
+  (num-op * l r k h))
+(define (num/ [l : Value] [r : Value] [k : Cont] [h : Handler?]) : Value
+  (num-op / l r k h))
 
-(module+ test
+#;(module+ test
   (test (num+ (numV 1) (numV 2))
         (numV 3))
   (test (num* (numV 2) (numV 3))
         (numV 6)))
 
 ;; lookup ----------------------------------------
-(define (lookup [n : symbol] [env : Env]) : Value
+(define (lookup [n : symbol] [env : Env] [k : Cont] [h : Handler?]) : Value
   (cond
-   [(empty? env) (error 'lookup "free variable")]
+   [(empty? env) (escape h (errorV "free variable"))]
    [else (cond
           [(symbol=? n (bind-name (first env)))
-           (bind-val (first env))]
-          [else (lookup n (rest env))])]))
+           (continue k (bind-val (first env)))]
+          [else (lookup n (rest env) k h)])]))
 
 (module+ test
-  (test/exn (lookup 'x mt-env)
-            "free variable")
-  (test (lookup 'x (extend-env (bind 'x (numV 8)) mt-env))
+  (test (lookup 'x mt-env (doneK (none)) (none))
+            (errorV "free variable"))
+  (test (lookup 'x (extend-env (bind 'x (numV 8)) mt-env) (doneK (none)) (none))
         (numV 8))
   (test (lookup 'x (extend-env
                     (bind 'x (numV 9))
-                    (extend-env (bind 'x (numV 8)) mt-env)))
+                    (extend-env (bind 'x (numV 8)) mt-env)) (doneK (none)) (none))
         (numV 9))
   (test (lookup 'y (extend-env
                     (bind 'x (numV 9))
-                    (extend-env (bind 'y (numV 8)) mt-env)))
+                    (extend-env (bind 'y (numV 8)) mt-env)) (doneK (none)) (none))
         (numV 8)))
+
+;; escape ----------------------------------------
+(define (escape [h : Handler?] [v : Value]) : Value
+  (type-case (optionof Handler) h
+    [some (current-h)
+          (type-case Handler current-h
+            [handlerH (handler env next-k)
+                      (interp handler env
+                              next-k (get-handler next-k))])]
+    [none () (continue (doneK (none)) v)]))
+
+(define (get-handler [k : Cont]) : Handler?
+  (type-case Cont k
+    [doneK (h) h]
+    [addSecondK (r e k h) h]
+    [doAddK (v k h) h]
+    [multSecondK (r e k h) h]
+    [doMultK (v k h) h]
+    [negK (k h) h]
+    [avgRestK (ns acc len env k h) h]
+    [appArgsK (a f v e k h) h]
+    [if0K (t el en k h) h]    
+    [doAppK (f k h) h]))
+
+(define (replace-handler [k : Cont] [new-h : Handler?]) : Cont
+  (type-case Cont k
+    [doneK (h) (doneK new-h)]
+    [addSecondK (r e k new-h)
+                (addSecondK r e k new-h)]
+    [doAddK (v k h)
+            (doAddK v k new-h)]
+    [multSecondK (r e k h)
+                 (multSecondK r e k new-h)]
+    [doMultK (v k h)
+             (doMultK v k new-h)]
+    [negK (k h)
+          (negK k new-h)]
+    [avgRestK (ns acc len env k h)
+              (avgRestK ns acc len env k new-h)]
+    [appArgsK (a f v e k h)
+              (appArgsK a f v e k new-h)]
+    [if0K (t el en k h)
+          (if0K t el en k new-h)]    
+    [doAppK (f k h)
+            (doAppK f k h)]))
+
+(trace interp)
+(trace continue)
+(trace escape)
