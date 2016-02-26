@@ -59,8 +59,8 @@
 ;; we see the interpreter jumps immediately back to the exception handler.
 ;;
 ;; Exception handlers capture the current environment and continuation.
-;; When an error occurs, escape interprets the handler in the captured
-;; environment and continuation.
+;; When an error occurs, escape interprets the first handler in the
+;; captured environment and continuation.
 (define-type Handler
   [handlerH (handler : ExprC)
             (env     : Env)
@@ -68,6 +68,8 @@
 
 (define-type-alias Handlers (listof Handler))
 (define mt-handler empty)
+(define add-handler cons)
+(define pop-handler rest)
 
 (define-type Binding
   [bind (name : symbol)
@@ -106,13 +108,14 @@
             (vals  : (listof Value))
             (env   : Env)
             (k     : Cont)]
+        
+  [doAppK (f : (listof Value))
+          (k : Cont)]
+  
   [if0K (thn : ExprC)
         (els : ExprC)
         (env : Env)
         (k   : Cont)]
-        
-  [doAppK (f : (listof Value))
-          (k : Cont)]
   ;; Allows interp to arrange for the current handler
   ;; to be removed when no error is encountered.
   [popHandlerK (k : Cont)])
@@ -249,7 +252,7 @@
                   (if0K thn els env k) h)]
     [tryC (body handler)
           (interp body env (popHandlerK k)
-                  (cons (handlerH handler env k) h))]
+                  (add-handler (handlerH handler env k) h))]
     [throwC (msg)
             (escape (errorV msg) h)]))
 
@@ -307,7 +310,7 @@
                          (escape (errorV "arity mismatch") h))]
               [else (escape (errorV "not a function") h)])]
     [popHandlerK (next-k)
-                 (continue v next-k (rest h))]))
+                 (continue v next-k (pop-handler h))]))
 
 (define interp-expr : (ExprC -> s-expression)
   (λ (e)
@@ -588,7 +591,7 @@
   (test (num+ (numV 2)
               (closV (list 'x) (idC 'x) empty)
               (popHandlerK (doneK))
-              (cons (handlerH (numC 3) mt-env (doneK))
+              (add-handler (handlerH (numC 3) mt-env (doneK))
                     mt-handler))
         (numV 3))
   (test (num+ (numV 1) (numV 2) (doneK) mt-handler)
@@ -608,10 +611,10 @@
 (module+ test
   (test (lookup 'x mt-env (doneK) mt-handler)
         (errorV "free variable"))
-  (test (lookup 'x mt-env (popHandlerK (doneK)) (cons (handlerH (numC 7)
-                                                                mt-env
-                                                                (doneK))
-                                                                mt-handler))
+  (test (lookup 'x mt-env (popHandlerK (doneK)) (add-handler (handlerH (numC 7)
+                                                                       mt-env
+                                                                       (doneK))
+                                                             mt-handler))
         (numV 7))
   (test (lookup 'x (extend-env (bind 'x (numV 8)) mt-env) (doneK) mt-handler)
         (numV 8))
@@ -629,41 +632,41 @@
   (cond
     [(cons? h) (type-case Handler (first h)
                  [handlerH (handlr env next-k)
-                           (interp handlr env next-k (rest h))])]
+                           (interp handlr env next-k (pop-handler h))])]
     [else v]))
 
 (module+ test
   (test (escape (errorV "yo") mt-handler)
         (errorV "yo"))
-  (test (escape (errorV "") (cons (handlerH (idC 'x)
-                                            (extend-env
-                                             (bind 'x (numV 8)) mt-env)
-                                            (doneK)) mt-handler))
+  (test (escape (errorV "") (add-handler (handlerH (idC 'x)
+                                                   (extend-env
+                                                    (bind 'x (numV 8)) mt-env)
+                                                   (doneK)) mt-handler))
         (numV 8))
-  (test (escape (errorV "") (cons
+  (test (escape (errorV "") (add-handler
                              (handlerH (idC 'x)
                                        (extend-env
                                         (bind 'x (numV 8)) mt-env)
                                        (doAddK (numV 7) (doneK))) mt-handler))
         (numV 15))
-  (test (escape (errorV "") (cons
+  (test (escape (errorV "") (add-handler
                              (handlerH (idC 'x)
                                        (extend-env
                                         (bind 'x (numV 8)) mt-env)
                                        (doAddK (numV 7) (popHandlerK (doneK))))
-                             (cons
+                             (add-handler
                               (handlerH (numC 9)
                                         mt-env
-                                        (doneK))mt-handler)))
+                                        (doneK)) mt-handler)))
         (numV 15))
-  (test (escape (errorV "") (cons
+  (test (escape (errorV "") (add-handler
                              (handlerH (idC 'x)
                                        (extend-env
                                         (bind 'x (numV 8)) mt-env)
                                        (doAddK (closV (list 'x)
                                                       (idC 'x)
                                                       mt-env) (popHandlerK (doneK))))
-                             (cons
+                             (add-handler
                               (handlerH (numC 9)
                                         mt-env
                                         (doneK))mt-handler)))
