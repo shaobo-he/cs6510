@@ -217,7 +217,7 @@
 ;; interp & continue ----------------------------------------
 (define (interp [a : ExprC] [env : Env] [k : Cont] [h : Handlers]) : Value
   (type-case ExprC a
-    [numC (n) (continue k (numV n) h)]
+    [numC (n) (continue (numV n) k h)]
     [idC (s) (lookup s env k h)]
     [plusC (l r) (interp l env
                          (addSecondK r env k) h)]
@@ -226,13 +226,13 @@
     [negC (n) (interp n env
                       (negK k) h)]
 
-    [avgC (ns l) (cond
+    [avgC (ns len) (cond
                    [(cons? ns) (interp (first ns) env
-                                       (avgRestK (rest ns) l
+                                       (avgRestK (rest ns) len
                                                  env k) h)]
-                   [else (continue k (numV 0) h)])]
+                   [else (continue (numV 0) k h)])]
     [lamC (ns body)
-          (continue k (closV ns body env) h)]
+          (continue (closV ns body env) k h)]
     [appC (fun args)
           (cond 
           [(cons? args) (interp (first args) env
@@ -253,7 +253,7 @@
     [throwC (msg)
             (escape (errorV msg) h)]))
 
-(define (continue [k : Cont] [v : Value] [h : Handlers]) : Value
+(define (continue [v : Value] [k : Cont] [h : Handlers]) : Value
   (type-case Cont k
     [doneK () v]
     [addSecondK (r env next-k)
@@ -266,9 +266,9 @@
                         (doMultK v next-k) h)]
     [doMultK (v-l next-k)
              (num* v-l v next-k h)]
-    [negK (k)
+    [negK (next-k)
           (type-case Value v
-            [numV (n) (continue k (numV (* -1 n)) h)]
+            [numV (n) (continue (numV (* -1 n)) next-k h)]
             [else (escape (errorV "not a number") h)])]
     [avgRestK (ns len env next-k) ;; Accumulator comes in as v
               (cond
@@ -303,11 +303,11 @@
                          (escape (errorV "arity mismatch") h))]
               [contV (k-v old-h)
                      (if (= (length vs) 1)
-                         (continue k-v (first vs) old-h)
+                         (continue (first vs) k-v old-h)
                          (escape (errorV "arity mismatch") h))]
               [else (escape (errorV "not a function") h)])]
     [popHandlerK (next-k)
-                 (continue next-k v (rest h))]))
+                 (continue v next-k (rest h))]))
 
 (define interp-expr : (ExprC -> s-expression)
   (λ (e)
@@ -320,6 +320,12 @@
   ;; Exception tests
   (test (interp-expr (parse '{throw "ouch"}))
         `"ouch")
+  (test (interp-expr (parse '{try
+                        (throw "9")
+                        (lambda {} {try
+                                    (throw "7")
+                                    {lambda {} 13}})}))
+        `13)
   (test (interp-expr (parse '{try
                               {throw "ouch"}
                               {lambda {} 7}}))
@@ -545,19 +551,20 @@
   (test (interp (parse '{{lambda {x} 0} {1 2}}) mt-env (doneK) mt-handler)
         (errorV "not a function"))
 
-  (test (continue (doneK) (numV 5) mt-handler)
+  (test (continue (numV 5) (doneK) mt-handler)
         (numV 5))
-  (test (continue (addSecondK (numC 6) mt-env (doneK)) (numV 5) mt-handler)
+  (test (continue (numV 5) (addSecondK (numC 6) mt-env (doneK)) mt-handler)
         (numV 11))
-  (test (continue (doAddK (numV 7) (doneK)) (numV 5) mt-handler)
+  (test (continue (numV 5) (doAddK (numV 7) (doneK)) mt-handler)
         (numV 12))
-  (test (continue (multSecondK (numC 6) mt-env (doneK)) (numV 5) mt-handler)
+  (test (continue (numV 5) (multSecondK (numC 6) mt-env (doneK)) mt-handler)
         (numV 30))
-  (test (continue (doMultK (numV 7) (doneK)) (numV 5) mt-handler)
+  (test (continue (numV 5) (doMultK (numV 7) (doneK)) mt-handler)
         (numV 35))
-  (test (continue (appArgsK empty (parse '{lambda {x} x}) empty mt-env (doneK)) (numV 5) mt-handler)
+  (test (continue (numV 5) (appArgsK empty (parse '{lambda {x} x}) empty mt-env (doneK)) mt-handler)
         (numV 5))
-  (test (continue (doAppK (list (numV 8)) (doneK)) (closV (list 'x) (idC 'x) mt-env) mt-handler)
+  (test (continue (closV (list 'x) (idC 'x) mt-env)
+                  (doAppK (list (numV 8)) (doneK)) mt-handler)
         (numV 8)))
 
 ;; num+ and num* ----------------------------------------
@@ -565,7 +572,7 @@
                 [k : Cont] [h : Handlers]) : Value
   (cond
    [(and (numV? l) (numV? r))
-    (continue k (numV (op (numV-n l) (numV-n r))) h)]
+    (continue (numV (op (numV-n l) (numV-n r))) k h)]
    [else
     (escape (errorV "not a number") h)]))
 (define (num+ [l : Value] [r : Value] [k : Cont] [h : Handlers]) : Value
@@ -595,7 +602,7 @@
    [(empty? env) (escape (errorV "free variable") h)]
    [else (cond
           [(symbol=? n (bind-name (first env)))
-           (continue k (bind-val (first env)) h)]
+           (continue (bind-val (first env)) k h)]
           [else (lookup n (rest env) k h)])]))
 
 (module+ test
@@ -662,4 +669,4 @@
                                         (doneK))mt-handler)))
         (numV 9)))
 
-;(trace interp continue );num-op lookup escape)
+;(trace interp continue num-op lookup escape)
