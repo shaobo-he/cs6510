@@ -30,7 +30,9 @@
   [avgC (ns  : (listof ExprC))
         (len : number)]
   [tryC (body    : ExprC)
-        (handler : ExprC)])
+        (handler : ExprC)]
+  [throwC (msg : string)])
+  
 
 ;; List of exception handlers.
 ;; It's hard to observe the "jump immediately to the handler"
@@ -138,6 +140,9 @@
                    (parse (third (s-exp->list s))))
              (list (parse (second bs)))))]
 
+    [(s-exp-match? '{throw STRING} s)
+     (throwC (s-exp->string (second (s-exp->list s))))]
+    
     [(s-exp-match? '{try ANY {lambda {} ANY}} s)
      (tryC (parse (second (s-exp->list s)))
            (parse (third (s-exp->list (third (s-exp->list s))))))]
@@ -170,6 +175,8 @@
     [else (error 'parse "invalid input")]))
 
 (module+ test
+  (test (parse '{throw "ouch"})
+        (throwC "ouch"))
   (test (parse '2)
         (numC 2))
   (test (parse `x) ; note: backquote instead of normal quote
@@ -242,7 +249,9 @@
                   (if0K thn els env k) h)]
     [tryC (body handler)
           (interp body env (popHandlerK k)
-                  (cons (handlerH handler env k) h))]))
+                  (cons (handlerH handler env k) h))]
+    [throwC (msg)
+            (escape (errorV msg) h)]))
 
 (define (continue [k : Cont] [v : Value] [h : Handlers]) : Value
   (type-case Cont k
@@ -309,6 +318,16 @@
 
 (module+ test
   ;; Exception tests
+  (test (interp-expr (parse '{throw "ouch"}))
+        `"ouch")
+  (test (interp-expr (parse '{try
+                              {throw "ouch"}
+                              {lambda {} 7}}))
+        `7)
+  (test (interp-expr (parse '{try
+                              {throw "ouch"}
+                              {lambda {} {throw "boom"}}}))
+        `"boom")
   (test (interp-expr (parse '{{lambda {x} x} 1 2}))
         `"arity mismatch")
   (test (interp-expr (parse '{let/cc k
@@ -643,4 +662,4 @@
                                         (doneK))mt-handler)))
         (numV 9)))
 
-;;(trace interp continue num-op lookup escape)
+;(trace interp continue );num-op lookup escape)
