@@ -329,6 +329,23 @@
                                     (throw "7")
                                     {lambda {} 13}})}))
         `13)
+  ;; Tests exception handler is interpreted in its environment
+  (test (interp-expr (parse '{let ([fib {lambda {a b n fib}
+                                          {try
+                                           {if0 n
+                                                {throw "done"}
+                                                {fib b {+ a b} {+ n -1} fib}}
+                                           {lambda {} a}}}])
+                               {fib 0 1 5 fib}}))
+        `5)
+  (test (interp-expr (parse '{let {[a 5]}
+                               {try
+                                {let {[a 7]}
+                                  {try
+                                   {throw "1"}
+                                   {lambda {} {throw 2}}}}
+                                {lambda {} a}}}))
+        `5)
   (test (interp-expr (parse '{try
                               {throw "ouch"}
                               {lambda {} 7}}))
