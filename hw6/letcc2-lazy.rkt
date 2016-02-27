@@ -1,37 +1,37 @@
-#lang plai-typed
+#lang plai-lazy
 (require plai-typed/s-exp-match)
 
 (define-type Value
-  [numV (n : number)]
-  [closV (args : (listof symbol))
-         (body : ExprC)
-         (env : Env)]
-  [contV (k : Cont)
-         (h : Handlers)]
-  [errorV (msg : string)])
+  [numV (n number?)]
+  [closV (args (listof symbol?))
+         (body ExprC?)
+         (env Env?)]
+  [contV (k Cont?)
+         (h Handlers?)]
+  [errorV (msg string?)])
 
 (define-type ExprC
-  [numC (n : number)]
-  [idC (s : symbol)]
-  [plusC (l : ExprC) 
-         (r : ExprC)]
-  [multC (l : ExprC)
-         (r : ExprC)]
-  [negC  (n : ExprC)]
-  [lamC (ns : (listof symbol))
-        (body : ExprC)]
-  [appC (fun : ExprC)
-        (args : (listof ExprC))]
-  [let/ccC (n : symbol)
-           (body : ExprC)]
-  [if0C (cnd : ExprC)
-        (thn : ExprC)
-        (els : ExprC)]
-  [avgC (ns  : (listof ExprC))
-        (len : number)]
-  [tryC (body    : ExprC)
-        (handler : ExprC)]
-  [throwC (msg : string)])
+  [numC (n number?)]
+  [idC (s symbol?)]
+  [plusC (l ExprC?) 
+         (r ExprC?)]
+  [multC (l ExprC?)
+         (r ExprC?)]
+  [negC  (n ExprC?)]
+  [lamC (ns (listof symbol?))
+        (body ExprC?)]
+  [appC (fun ExprC?)
+        (args (listof ExprC?))]
+  [let/ccC (n symbol?)
+           (body ExprC?)]
+  [if0C (cnd ExprC?)
+        (thn ExprC?)
+        (els ExprC?)]
+  [avgC (ns  (listof ExprC?))
+        (len number?)]
+  [tryC (body    ExprC?)
+        (handler ExprC?)]
+  [throwC (msg string?)])
   
 
 ;; List of exception handlers.
@@ -62,20 +62,23 @@
 ;; When an error occurs, escape interprets the first handler in the
 ;; captured environment and continuation.
 (define-type Handler
-  [handlerH (handler : ExprC)
-            (env     : Env)
-            (k       : Cont)])
+  [handlerH (handler ExprC?)
+            (env     Env?)
+            (k       Cont?)])
 
-(define-type-alias Handlers (listof Handler))
+;(define-type-alias Handlers (listof Handler))
 (define mt-handler empty)
 (define add-handler cons)
 (define pop-handler rest)
 
 (define-type Binding
-  [bind (name : symbol)
-        (val : Value)])
-
-(define-type-alias Env (listof Binding))
+  [bind (name symbol?)
+        (val Value?)])
+(define Handlers?
+  (listof Handler?))
+(define Env?
+  (listof Binding?))
+;(define-type-alias Env (listof Binding))
 
 (define mt-env empty)
 (define extend-env cons)
@@ -83,48 +86,55 @@
 
 (define-type Cont
   [doneK]
-  [addSecondK (r : ExprC)
-              (e : Env)
-              (k : Cont)]
-  [doAddK (v : Value)
-          (k : Cont)]
-  [multSecondK (r : ExprC)
-               (e : Env)
-               (k : Cont)]
-  [doMultK (v : Value)
-           (k : Cont)]
-  [negK (k : Cont)]
-  [avgRestK (ns  :  (listof ExprC))
-            (len : number)
-            (env : Env)
-            (k   : Cont)]
-  [accAvgK (ns  : (listof ExprC))
-           (acc : Value)
-           (len : number)
-           (env : Env)
-           (k   : Cont)]
-  [appArgsK (a     : (listof ExprC))
-            (fun-e : ExprC)
-            (vals  : (listof Value))
-            (env   : Env)
-            (k     : Cont)]
+  [addSecondK (r ExprC?)
+              (e Env?)
+              (k Cont?)]
+  [doAddK (v Value?)
+          (k Cont?)]
+  [multSecondK (r ExprC?)
+               (e Env?)
+               (k Cont?)]
+  [doMultK (v Value?)
+           (k Cont?)]
+  [negK (k Cont?)]
+  [avgRestK (ns  (listof ExprC?))
+            (len number?)
+            (env Env?)
+            (k   Cont?)]
+  [accAvgK (ns  (listof ExprC?))
+           (acc Value?)
+           (len number?)
+           (env Env?)
+           (k   Cont?)]
+  [appArgsK (a     (listof ExprC?))
+            (fun-e ExprC?)
+            (vals  (listof Value?))
+            (env   Env?)
+            (k     Cont?)]
         
-  [doAppK (vs : (listof Value))
-          (k  : Cont)]
+  [doAppK (a (listof Value?))
+          (k Cont?)]
   
-  [if0K (thn : ExprC)
-        (els : ExprC)
-        (env : Env)
-        (k   : Cont)]
+  [if0K (thn ExprC?)
+        (els ExprC?)
+        (env Env?)
+        (k   Cont?)]
   ;; Allows interp to arrange for the current handler
   ;; to be removed when no error is encountered.
-  [popHandlerK (k : Cont)])
+  [popHandlerK (k Cont?)])
 
 (module+ test
   (print-only-errors true))
 
+(define s-exp->number identity)
+(define s-exp->list identity)
+(define s-exp->symbol identity)
+(define s-exp->string identity)
+(define s-exp-list? list?)
+(define s-exp-number? number?)
+
 ;; parse ----------------------------------------
-(define (parse [s : s-expression]) : ExprC
+(define (parse s)
   (cond
     [(s-exp-match? `NUMBER s) (numC (s-exp->number s))]
     [(s-exp-match? `SYMBOL s) (idC (s-exp->symbol s))]
@@ -218,7 +228,7 @@
             "invalid input"))
 
 ;; interp & continue ----------------------------------------
-(define (interp [a : ExprC] [env : Env] [k : Cont] [h : Handlers]) : Value
+(define (interp [a ExprC?] [env Env?] [k Cont?] [h Handlers?])
   (type-case ExprC a
     [numC (n) (continue (numV n) k h)]
     [idC (s) (lookup s env k h)]
@@ -256,7 +266,16 @@
     [throwC (msg)
             (escape (errorV msg) h)]))
 
-(define (continue [v : Value] [k : Cont] [h : Handlers]) : Value
+(define (map2 f l1 l2)
+  (cond
+    [(and (cons? l1)
+          (cons? l2))
+          (cons (f (first l1) (first l2))
+                (map2 f (rest l1) (rest l2)))]
+    [(and (empty? l1) (empty? l2)) empty]
+    [else (error 'map2 "length mismatch")]))
+
+(define (continue [v Value?] [k Cont?] [h Handlers?])
   (type-case Cont k
     [doneK () v]
     [addSecondK (r env next-k)
@@ -312,7 +331,10 @@
     [popHandlerK (next-k)
                  (continue v next-k (pop-handler h))]))
 
-(define interp-expr : (ExprC -> s-expression)
+(define number->s-exp identity)
+(define string->s-exp identity)
+
+(define interp-expr
   (λ (e)
     (type-case Value (interp e mt-env (doneK) mt-handler)
       [numV (n) (number->s-exp n)]
@@ -447,7 +469,7 @@
 
   ;; Behavior tests
   (test (interp-expr (parse '{{lambda {x y z} {* x {+ y z}}} 2 3 4}))
-        `14)
+        14)
   (test (interp-expr (parse '{avg 1 2}))
         (number->s-exp 3/2))
   
@@ -571,18 +593,18 @@
         (numV 8)))
 
 ;; num+ and num* ----------------------------------------
-(define (num-op [op : (number number -> number)] [l : Value] [r : Value]
-                [k : Cont] [h : Handlers]) : Value
+(define (num-op op [l Value?] [r Value?]
+                [k Cont?] [h Handlers?])
   (cond
    [(and (numV? l) (numV? r))
     (continue (numV (op (numV-n l) (numV-n r))) k h)]
    [else
     (escape (errorV "not a number") h)]))
-(define (num+ [l : Value] [r : Value] [k : Cont] [h : Handlers]) : Value
+(define (num+ [l Value?] [r Value?] [k Cont?] [h Handlers?])
   (num-op + l r k h))
-(define (num* [l : Value] [r : Value] [k : Cont] [h : Handlers]) : Value
+(define (num* [l Value?] [r Value?] [k Cont?] [h Handlers?])
   (num-op * l r k h))
-(define (num/ [l : Value] [r : Value] [k : Cont] [h : Handlers]) : Value
+(define (num/ [l Value?] [r Value?] [k Cont?] [h Handlers?])
   (num-op / l r k h))
 
 (module+ test
@@ -600,13 +622,13 @@
         (numV 6)))
 
 ;; lookup ----------------------------------------
-(define (lookup [n : symbol] [env : Env] [k : Cont] [h : Handlers]) : Value
-  (cond
-   [(empty? env) (escape (errorV "free variable") h)]
-   [else (cond
-          [(symbol=? n (bind-name (first env)))
-           (continue (bind-val (first env)) k h)]
-          [else (lookup n (rest env) k h)])]))
+(define (lookup [n symbol?] [env Env?] [k Cont?] [h Handlers?])
+    (cond
+      [(empty? env) (escape (errorV "free variable") h)]
+      [else (cond
+              [(symbol=? n (bind-name (first env)))
+               (continue (bind-val (first env)) k h)]
+              [else (lookup n (rest env) k h)])]))
 
 (module+ test
   (test (lookup 'x mt-env (doneK) mt-handler)
@@ -628,7 +650,7 @@
         (numV 8)))
 
 ;; escape ----------------------------------------
-(define (escape [v : Value] [h : Handlers]) : Value
+(define (escape [v Value?] [h Handlers?])
   (cond
     [(cons? h) (type-case Handler (first h)
                  [handlerH (handlr env next-k)
@@ -672,4 +694,4 @@
                                         (doneK))mt-handler)))
         (numV 9)))
 
-;(trace interp continue num-op lookup escape)
+#;(trace interp continue num-op lookup escape)
