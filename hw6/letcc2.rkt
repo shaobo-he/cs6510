@@ -444,7 +444,7 @@
                                   {lambda {} 3}}}))
           `function)
   
-  ;; Make sure call/cc restores old handler
+  ;; Make sure calling a continuation restores old handler
   (test (interp-expr (parse '{try
                               {+ {let/cc k
                                    {try
