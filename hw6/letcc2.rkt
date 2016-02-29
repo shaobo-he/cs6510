@@ -48,15 +48,16 @@
 ;; we get
 ;; >(num-op
 ;;   #<procedure:+>
-;;   (numV 3)
-;;   (closV '() (numC 13) '())
-;;   (doAddK (numV 2) (doAddK (numV 1) (popHandlerK (doneK))))
-;;   (list (handlerH (numC 11) '() (doneK))))
+;;   l = (numV 3)
+;;   r = (closV '() (numC 13) '())
+;;   k = (doAddK (numV 2) (doAddK (numV 1) (popHandlerK (doneK))))
+;;   h = (list (handlerH (numC 11) '() (doneK))))
 ;; >(escape (errorV "not a number") (list (handlerH (numC 11) '() (doneK))))
 ;; >(interp (numC 11) '() (doneK) '())
 ;; >(continue (doneK) (numV 11) '())
 ;; <(numV 11)
-;; we see the interpreter jumps immediately back to the exception handler.
+;; we see the interpreter jumps immediately back to the exception handler,
+;; rather than popping off the two pending doAddK continuations.
 ;;
 ;; Exception handlers capture the current environment and continuation.
 ;; When an error occurs, escape interprets the first handler in the
