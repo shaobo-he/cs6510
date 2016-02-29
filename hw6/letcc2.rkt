@@ -338,6 +338,15 @@
                                            {lambda {} a}}}])
                                {fib 0 1 5 fib}}))
         `5)
+  (test (interp-expr (parse '(let/cc fast
+                               {let {[fac {lambda {n a fac}
+                                            {try
+                                             {if0 n
+                                                  (throw "done")
+                                                  {fac {+ n -1} {* a n} fac}}
+                                             {lambda {} {fast a}}}}]}
+                                 {fac 3 1 fac}})))
+        `6)
   (test (interp-expr (parse '{let {[a 5]}
                                {try
                                 {let {[a 7]}
@@ -689,4 +698,4 @@
                                         (doneK))mt-handler)))
         (numV 9)))
 
-;(trace interp continue num-op lookup escape)
+;;(trace interp continue num-op lookup escape)
