@@ -330,6 +330,15 @@
                                     (throw "7")
                                     {lambda {} 13}})}))
         `13)
+
+  (test (interp-expr (parse '{try
+                              {let {[sum {+ {try 2 {lambda {} 30}}
+                                            {try 3 {lambda {} 40}}}]}
+                                {if0 {+ sum -70}
+                                     80
+                                     {{lambda {x} x}}}}
+                              {lambda {} 50}}))
+        `50)
   ;; Tests exception handler is interpreted in its environment
   (test (interp-expr (parse '{let ([fib {lambda {a b n fib}
                                           {try
@@ -420,6 +429,11 @@
                                              6}}}
                               {lambda {} 7}}))
         `7)
+  (test (interp-expr (parse '{try {+ {try 2
+                                          {lambda {} 50}}
+                                     {lambda {} 9}}
+                                  {lambda {} 30}}))
+        `30)
   (test (interp-expr (parse '{try
                               {let/cc done
                                 {done {+ 2 {lambda {} 3}}}}
@@ -699,4 +713,4 @@
                                         (doneK))mt-handler)))
         (numV 9)))
 
-;;(trace interp continue num-op lookup escape)
+;(trace interp continue num-op lookup escape)
