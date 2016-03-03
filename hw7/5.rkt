@@ -18,7 +18,9 @@
         (thn : ExprC)
         (els : ExprC)]
   [boxC (v : ExprC)]
-  [unboxC (b : ExprC)])
+  [unboxC (b : ExprC)]
+  [setboxC (b : ExprC)
+           (v : ExprC)])
 
 #|
     (define-type ExprD
@@ -36,6 +38,8 @@
             (els : ExprD)])
   19  [boxD (v : ExprD)]
   22  [unboxD (b : ExprD)]
+  24  [setboxD (b : ExprD)
+               (v : ExprD)]
 |#
 
 #|
@@ -79,6 +83,12 @@
               (k : Cont)])
   20  [boxK (k : Cont)]
   23  [unboxK (k : Cont)]
+  25  [setboxK (v : ExprD)
+               (env : Env)
+               (k : Cont)]
+  26  [doSetboxK (b : Value)
+                 (k : Cont)]
+               
 |#
 
 #|
@@ -145,6 +155,9 @@
     (boxC (parse (second (s-exp->list s))))]
    [(s-exp-match? '{unbox ANY} s)
     (unboxC (parse (second (s-exp->list s))))]
+   [(s-exp-match? '{set-box! ANY ANY} s)
+    (let ([ls (s-exp->list s)])
+      (setboxC (parse (second ls)) (parse (third ls))))]
    [(s-exp-match? '{ANY ANY} s)
     (appC (parse (first (s-exp->list s)))
           (parse (second (s-exp->list s))))]
@@ -186,7 +199,8 @@
                         (compile then-expr env)
                         (compile else-expr env))]
     [boxC (v) (code-malloc1 19 (compile v env))]
-    [unboxC (b) (code-malloc1 22 (compile b env))]))
+    [unboxC (b) (code-malloc1 22 (compile b env))]
+    [setboxC (b v) (code-malloc2 24 (compile b env) (compile v env))]))
 
 (define (locate name env)
   (cond
@@ -296,7 +310,7 @@
         [(0 15)
          ;; Record has just an integer
          (done 1)]
-        [(1 3 5)
+        [(1 3 5 25)
          (begin
            ;; Record has two run-time pointers
            ;;  in slots 2 and 3 (and an integer in 1)
@@ -308,7 +322,7 @@
            ;; Box records have 1 run-time pointer
            (move! 1)
            (done 1))]
-        [(2 4 6 17)
+        [(2 4 6 17 26)
          (begin
            ;; Etc.
            (move! 1)
@@ -356,14 +370,14 @@
              (malloc1 (vector-ref from-memory n)
                       (vector-ref from-memory (+ n 1)))
              (vector-set! from-memory (+ n 1) (- ptr 2)))]
-          [(2 4 6 16 17)
+          [(2 4 6 16 17 26)
            ;; size 2
            (begin
              (malloc2 (vector-ref from-memory n)
                       (vector-ref from-memory (+ n 1))
                       (vector-ref from-memory (+ n 2)))
              (vector-set! from-memory (+ n 1) (- ptr 3)))]
-          [(1 3 5)
+          [(1 3 5 25)
            ;; size 3
            (begin
              (malloc3 (vector-ref from-memory n)
@@ -445,6 +459,14 @@
      (begin
        (set! k-reg (malloc1 23 k-reg))
        (set! expr-reg (code-ref expr-reg 1))
+       (interp))]
+    [(24) ; set-box!
+     (begin
+       (set! k-reg (malloc3 25
+                            (code-ref expr-reg 2)
+                            env-reg
+                            k-reg))
+       (set! expr-reg (code-ref expr-reg 1))
        (interp))]))
 
 (define k-reg 0) ; Cont
@@ -508,7 +530,31 @@
      (begin
        (set! v-reg (ref v-reg 1))
        (set! k-reg (ref k-reg 1))
+       (continue))]
+    [(25) ; setboxK
+     (begin
+       (set! expr-reg (ref k-reg 1))
+       (set! env-reg (ref k-reg 2))
+       (set! k-reg (malloc2 26 v-reg (ref k-reg 3)))
+       (interp))]
+    [(26)
+     (begin
+       (mem-set! (+ (ref k-reg 1) ;; passed box
+                    1) ;; Pointer in box
+                 v-reg)
+       (set! k-reg (ref k-reg 2))
        (continue))]))
+
+;; mem-set!
+(define (mem-set! addr val)
+  (vector-set! memory addr val))
+
+(module+ test
+  (test (let ([old (ref 0 0)])
+          (begin
+            (mem-set! 0 (+ (ref 0 0) 1))
+            (eq? (+ old 1) (ref 0 0))))
+        true))
 
 ;; num-op : (number number -> number) -> (Value Value -> Value)
 (define (num-op op)
@@ -607,6 +653,19 @@
                   empty-env
                   (init-k))
          1)
+
+  ;; Part 2 tests
+  (reset!)
+  (ntest (interpx (compile
+                   (parse '{{lambda {b}
+                              {{lambda {z}
+                                 {unbox b}}
+                               {set-box! b {+ {unbox b} 1}}}}
+                            {box 3}})
+                   mt-env)
+                  empty-env
+                  (init-k))
+         4)
   
   ;; Old tests
   (ntest (interpx (compile (parse '10) mt-env)
