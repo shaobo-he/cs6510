@@ -20,7 +20,9 @@
   [boxC (v : ExprC)]
   [unboxC (b : ExprC)]
   [setboxC (b : ExprC)
-           (v : ExprC)])
+           (v : ExprC)]
+  [beginC (f : ExprC)
+          (s : ExprC)])
 
 #|
     (define-type ExprD
@@ -40,6 +42,8 @@
   22  [unboxD (b : ExprD)]
   24  [setboxD (b : ExprD)
                (v : ExprD)]
+  27  [beginD (f : ExprD)
+              (s : ExprD)]
 |#
 
 #|
@@ -88,7 +92,9 @@
                (k : Cont)]
   26  [doSetboxK (b : Value)
                  (k : Cont)]
-               
+  28  [beginSecondK (s : ExprD)
+                    (e : Env)
+                    (k : Cont)]
 |#
 
 #|
@@ -147,6 +153,16 @@
    [(s-exp-match? '{* ANY ANY} s)
     (multC (parse (second (s-exp->list s)))
           (parse (third (s-exp->list s))))]
+   [(s-exp-match? '{let {[SYMBOL ANY]} ANY} s)
+    (let* ([ls (s-exp->list s)]
+           [ps (s-exp->list (first (s-exp->list (second ls))))])
+      (appC (lamC (s-exp->symbol (first ps))
+                  (parse (third ls)))
+            (parse (second ps))))]
+   [(s-exp-match? '{begin ANY ANY} s)
+    (let ([ls (s-exp->list s)])
+      (beginC (parse (second ls)) (parse (third ls))))]
+               
    [(s-exp-match? '{lambda {SYMBOL} ANY} s)
     (lamC (s-exp->symbol (first (s-exp->list 
                                  (second (s-exp->list s)))))
@@ -200,7 +216,8 @@
                         (compile else-expr env))]
     [boxC (v) (code-malloc1 19 (compile v env))]
     [unboxC (b) (code-malloc1 22 (compile b env))]
-    [setboxC (b v) (code-malloc2 24 (compile b env) (compile v env))]))
+    [setboxC (b v) (code-malloc2 24 (compile b env) (compile v env))]
+    [beginC (f s) (code-malloc2 27 (compile f env) (compile s env))]))
 
 (define (locate name env)
   (cond
@@ -310,7 +327,7 @@
         [(0 15)
          ;; Record has just an integer
          (done 1)]
-        [(1 3 5 25)
+        [(1 3 5 25 28)
          (begin
            ;; Record has two run-time pointers
            ;;  in slots 2 and 3 (and an integer in 1)
@@ -377,7 +394,7 @@
                       (vector-ref from-memory (+ n 1))
                       (vector-ref from-memory (+ n 2)))
              (vector-set! from-memory (+ n 1) (- ptr 3)))]
-          [(1 3 5 25)
+          [(1 3 5 25 28)
            ;; size 3
            (begin
              (malloc3 (vector-ref from-memory n)
@@ -467,7 +484,16 @@
                             env-reg
                             k-reg))
        (set! expr-reg (code-ref expr-reg 1))
+       (interp))]
+    [(27) ; begin
+     (begin
+       (set! k-reg (malloc3 28
+                            (code-ref expr-reg 2)
+                            env-reg k-reg))
+       (set! expr-reg (code-ref expr-reg 1))
        (interp))]))
+
+
 
 (define k-reg 0) ; Cont
 (define v-reg 0) ; Value
@@ -537,13 +563,19 @@
        (set! env-reg (ref k-reg 2))
        (set! k-reg (malloc2 26 v-reg (ref k-reg 3)))
        (interp))]
-    [(26)
+    [(26) ; doSetboxK
      (begin
        (mem-set! (+ (ref k-reg 1) ;; passed box
                     1) ;; Pointer in box
                  v-reg)
        (set! k-reg (ref k-reg 2))
-       (continue))]))
+       (continue))]
+    [(28) ; beginSecondK
+     (begin
+       (set! expr-reg (ref k-reg 1))
+       (set! env-reg (ref k-reg 2))
+       (set! k-reg (ref k-reg 3))
+       (interp))]))
 
 ;; mem-set!
 (define (mem-set! addr val)
@@ -666,6 +698,51 @@
                   empty-env
                   (init-k))
          4)
+
+  (reset!)
+  (ntest (interpx (compile
+                   (parse '{let {[b {box 2}]}
+                             {begin
+                               {set-box! b 3}
+                               {unbox b}}})
+                   mt-env)
+                  empty-env
+                  (init-k))
+         3) (reset!)
+  (ntest (interpx (compile (parse '{let {[fac! {lambda {n}
+                                                 {lambda {a}
+                                                   {lambda {b}
+                                                     {lambda {fac!}
+                                                       {if0 n
+                                                            {set-box! b a}
+                                                            {{{{fac! {+ n -1}}
+                                                               {* a n}}
+                                                              b}
+                                                             fac!}}}}}}]}
+                                     {let {[b {box 0}]}
+                                       {begin
+                                         {{{{fac! 3} 1} b} fac!}
+                                         {unbox b}}}}) mt-env) empty-env (init-k))
+         6)
+  (reset!)
+
+  (ntest (interpx (compile (parse '{let {[fac! {lambda {n}
+                                                 {lambda {b}
+                                                   {lambda {fac!}
+                                                     {if0 n
+                                                          -1
+                                                          {begin
+                                                            {set-box! b {* n {unbox b}}}
+                                                            {{{fac! {+ n -1}}
+                                                              b}
+                                                             fac!}}}}}}]}
+                                     {let {[b {box 1}]}
+                                       {begin
+                                         {{{fac! 10} b} fac!}
+                                         {unbox b}}}}) mt-env) empty-env (init-k))
+         3628800) ;; Allegedly a byte. Really more about testing that begin allows
+                  ;; space bounded functions.
+  (reset!)
   
   ;; Old tests
   (ntest (interpx (compile (parse '10) mt-env)
