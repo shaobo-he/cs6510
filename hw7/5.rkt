@@ -6,9 +6,9 @@
 (define-type ExprC
   [numC (n : number)]
   [plusC (lhs : ExprC)
-        (rhs : ExprC)]
+         (rhs : ExprC)]
   [multC (lhs : ExprC)
-        (rhs : ExprC)]
+         (rhs : ExprC)]
   [idC (name : symbol)]
   [lamC (n : symbol)
         (body : ExprC)]
@@ -145,43 +145,52 @@
 
 (define (parse [s : s-expression]) : ExprC
   (cond
-   [(s-exp-match? `NUMBER s) (numC (s-exp->number s))]
-   [(s-exp-match? `SYMBOL s) (idC (s-exp->symbol s))]
-   [(s-exp-match? '{+ ANY ANY} s)
-    (plusC (parse (second (s-exp->list s)))
-          (parse (third (s-exp->list s))))]
-   [(s-exp-match? '{* ANY ANY} s)
-    (multC (parse (second (s-exp->list s)))
-          (parse (third (s-exp->list s))))]
-   [(s-exp-match? '{let {[SYMBOL ANY]} ANY} s)
-    (let* ([ls (s-exp->list s)]
-           [ps (s-exp->list (first (s-exp->list (second ls))))])
-      (appC (lamC (s-exp->symbol (first ps))
-                  (parse (third ls)))
-            (parse (second ps))))]
-   [(s-exp-match? '{begin ANY ANY} s)
-    (let ([ls (s-exp->list s)])
-      (beginC (parse (second ls)) (parse (third ls))))]
-               
-   [(s-exp-match? '{lambda {SYMBOL} ANY} s)
-    (lamC (s-exp->symbol (first (s-exp->list 
-                                 (second (s-exp->list s)))))
-          (parse (third (s-exp->list s))))]
-   [(s-exp-match? '{box ANY} s)
-    (boxC (parse (second (s-exp->list s))))]
-   [(s-exp-match? '{unbox ANY} s)
-    (unboxC (parse (second (s-exp->list s))))]
-   [(s-exp-match? '{set-box! ANY ANY} s)
-    (let ([ls (s-exp->list s)])
-      (setboxC (parse (second ls)) (parse (third ls))))]
-   [(s-exp-match? '{ANY ANY} s)
-    (appC (parse (first (s-exp->list s)))
-          (parse (second (s-exp->list s))))]
-   [(s-exp-match? '{if0 ANY ANY ANY} s)
-    (if0C (parse (second (s-exp->list s)))
-          (parse (third (s-exp->list s)))
-          (parse (fourth (s-exp->list s))))]
-   [else (error 'parse "invalid input")]))
+    [(s-exp-match? `NUMBER s) (numC (s-exp->number s))]
+    [(s-exp-match? `SYMBOL s) (idC (s-exp->symbol s))]
+    [(s-exp-match? '{+ ANY ANY} s)
+     (plusC (parse (second (s-exp->list s)))
+            (parse (third (s-exp->list s))))]
+    [(s-exp-match? '{* ANY ANY} s)
+     (multC (parse (second (s-exp->list s)))
+            (parse (third (s-exp->list s))))]
+    [(s-exp-match? '{let {[SYMBOL ANY]} ANY} s)
+     (let* ([ls (s-exp->list s)]
+            [ps (s-exp->list (first (s-exp->list (second ls))))])
+       (appC (lamC (s-exp->symbol (first ps))
+                   (parse (third ls)))
+             (parse (second ps))))]
+    
+    [(s-exp-match? '{begin ANY ANY} s)
+     (let ([ls (s-exp->list s)])
+       (beginC (parse (second ls)) (parse (third ls))))]
+    
+    [(s-exp-match? '{lambda {SYMBOL SYMBOL ...} ANY} s)
+     (let* ([ls (s-exp->list s)]
+            [body (parse (third ls))]
+            [names (s-exp->list (second ls))])
+       (foldr (λ (n lam) (lamC (s-exp->symbol n) lam))
+              body
+              names))]
+    
+    [(s-exp-match? '{box ANY} s)
+     (boxC (parse (second (s-exp->list s))))]
+    [(s-exp-match? '{unbox ANY} s)
+     (unboxC (parse (second (s-exp->list s))))]
+    [(s-exp-match? '{set-box! ANY ANY} s)
+     (let ([ls (s-exp->list s)])
+       (setboxC (parse (second ls)) (parse (third ls))))]
+    [(s-exp-match? '{if0 ANY ANY ANY} s)
+     (if0C (parse (second (s-exp->list s)))
+           (parse (third (s-exp->list s)))
+           (parse (fourth (s-exp->list s))))]
+    [(s-exp-match? '{ANY ANY ANY ...} s)
+     (let* ([ls (s-exp->list s)]
+            [fun (parse (first ls))]
+            [args (rest ls)])
+       (foldl (λ (a app) (appC app (parse a)))
+              (appC fun (parse (first args)))
+              (rest args)))]
+    [else (error 'parse "invalid input")]))
 
 (module+ test
   (test (parse '3) (numC 3))
@@ -221,10 +230,10 @@
 
 (define (locate name env)
   (cond
-   [(empty? env) (error 'locate "free variable")]
-   [else (if (symbol=? name (bindC-name (first env)))
-             0
-             (+ 1 (locate name (rest env))))]))
+    [(empty? env) (error 'locate "free variable")]
+    [else (if (symbol=? name (bindC-name (first env)))
+              0
+              (+ 1 (locate name (rest env))))]))
 
 ;; ----------------------------------------
 ;; Memory allocator with a 2-space collector
@@ -483,10 +492,12 @@
                             (code-ref expr-reg 2)
                             env-reg
                             k-reg))
+       ;; Evaluate box expression
        (set! expr-reg (code-ref expr-reg 1))
        (interp))]
     [(27) ; begin
      (begin
+       ;; Set interpreter to interpret first expression
        (set! k-reg (malloc3 28
                             (code-ref expr-reg 2)
                             env-reg k-reg))
@@ -561,17 +572,20 @@
      (begin
        (set! expr-reg (ref k-reg 1))
        (set! env-reg (ref k-reg 2))
-       (set! k-reg (malloc2 26 v-reg (ref k-reg 3)))
+       (set! k-reg (malloc2 26 v-reg (ref k-reg 3))) ;; Pass box
        (interp))]
     [(26) ; doSetboxK
      (begin
-       (mem-set! (+ (ref k-reg 1) ;; passed box
-                    1) ;; Pointer in box
+       ;; Set pointer in passed box to v-reg
+       (mem-set! (+ (ref k-reg 1)
+                    1)
                  v-reg)
        (set! k-reg (ref k-reg 2))
        (continue))]
     [(28) ; beginSecondK
      (begin
+       ;; Start second expression, ignoring the result of the
+       ;; first
        (set! expr-reg (ref k-reg 1))
        (set! env-reg (ref k-reg 2))
        (set! k-reg (ref k-reg 3))
@@ -650,7 +664,7 @@
                   empty-env
                   (init-k))
          3)  (reset!)
-
+  
   (reset!)
   (ntest (interpx (compile
                    (parse
@@ -685,7 +699,7 @@
                   empty-env
                   (init-k))
          1)
-
+  
   ;; Part 2 tests
   (reset!)
   (ntest (interpx (compile
@@ -698,7 +712,7 @@
                   empty-env
                   (init-k))
          4)
-
+  
   (reset!)
   (ntest (interpx (compile
                    (parse '{let {[b {box 2}]}
@@ -709,39 +723,62 @@
                   empty-env
                   (init-k))
          3) (reset!)
-  (ntest (interpx (compile (parse '{let {[fac! {lambda {n}
-                                                 {lambda {a}
-                                                   {lambda {b}
-                                                     {lambda {fac!}
-                                                       {if0 n
-                                                            {set-box! b a}
-                                                            {{{{fac! {+ n -1}}
-                                                               {* a n}}
-                                                              b}
-                                                             fac!}}}}}}]}
+  (ntest (interpx (compile (parse '{let {[fac!
+                                          {lambda {n}
+                                            {lambda {a}
+                                              {lambda {b}
+                                                {lambda {fac!}
+                                                  {if0 n
+                                                       {set-box! b a}
+                                                       {{{{fac! {+ n -1}}
+                                                          {* a n}}
+                                                         b}
+                                                        fac!}}}}}}]}
                                      {let {[b {box 0}]}
                                        {begin
                                          {{{{fac! 3} 1} b} fac!}
                                          {unbox b}}}}) mt-env) empty-env (init-k))
          6)
   (reset!)
-
-  (ntest (interpx (compile (parse '{let {[fac! {lambda {n}
-                                                 {lambda {b}
-                                                   {lambda {fac!}
-                                                     {if0 n
-                                                          -1
-                                                          {begin
-                                                            {set-box! b {* n {unbox b}}}
-                                                            {{{fac! {+ n -1}}
-                                                              b}
-                                                             fac!}}}}}}]}
+  
+  (ntest (interpx (compile (parse '{let {[fac!
+                                          {lambda {n}
+                                            {lambda {b}
+                                              {lambda {fac!}
+                                                {if0 n
+                                                     -1
+                                                     {begin
+                                                       {set-box! b {* n {unbox b}}}
+                                                       {{{fac! {+ n -1}}
+                                                         b}
+                                                        fac!}}}}}}]}
                                      {let {[b {box 1}]}
                                        {begin
                                          {{{fac! 10} b} fac!}
                                          {unbox b}}}}) mt-env) empty-env (init-k))
          3628800) ;; Allegedly a byte. Really more about testing that begin allows
-                  ;; space bounded functions.
+  ;; infinite loops.
+  (reset!)
+  
+  
+  (reset!)
+  ;; Testing all additions together. repeat should permit an infinite loop.
+  (ntest
+   (interpx (compile (parse '{let ([repeat
+                                    {lambda {times proc repeat}
+                                      {if0 times
+                                           {proc 2}
+                                           {begin
+                                             {proc 2}
+                                             {repeat {+ times -1} proc repeat}}}}])
+                               {let {[b {box 0}]}
+                                 {repeat 100
+                                         {lambda {_}
+                                           {begin
+                                             {set-box! b {+ {unbox b} 1}}
+                                             {unbox b}}}
+                                         repeat}}}) mt-env) empty-env (init-k))
+   101)
   (reset!)
   
   ;; Old tests
@@ -841,6 +878,6 @@
                      empty-env
                      (init-k))
             "out of memory")
-
+  
   (test/exn (compile (parse `x) mt-env)
             "free variable"))
