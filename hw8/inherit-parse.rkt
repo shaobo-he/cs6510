@@ -52,6 +52,11 @@
     (let ([ls (s-exp->list s)])
       (selectI (parse (second ls))
                (parse (third ls))))]
+
+   [(s-exp-match? '{instanceof ANY SYMBOL} s)
+    (let ([ls (s-exp->list s)])
+      (instanceofI (parse (second ls))
+                   (s-exp->symbol (third ls))))]
    
    [(s-exp-match? '{new SYMBOL ANY ...} s)
     (newI (s-exp->symbol (second (s-exp->list s)))
@@ -68,8 +73,8 @@
             (parse (third (s-exp->list s))))]
    [else (error 'parse "invalid input")]))
 
-(define object-class '{class object extends object
-                        {}})
+;; The object class
+(define object-class '{class object extends object {}})
 
 (module+ test
   (test (parse '0)
@@ -130,6 +135,36 @@
       [objV (class-name field-vals) `object])))
 
 (module+ test
+
+  (test (interp-prog (list '{class fish extends object
+                                   {size color}})
+                     '{instanceof {new fish 1 2} fish})
+        '0)
+  
+  (test (interp-prog (list '{class fish extends object
+                                   {size color}})
+                     '{instanceof {new fish 1 2} fish})
+        '0)
+  (test (interp-prog (list '{class fish extends object
+                                   {size color}}
+                           '{class shark extends fish
+                                   {teeth}})
+                     '{instanceof {new shark 1 2 3} fish})
+        '0)
+
+  (test (interp-prog (list '{class fish extends object
+                              {size color}}
+                           '{class shark extends fish
+                              {teeth}}
+                           '{class cat extends object
+                              {meow}})
+                     '{instanceof {new cat 2} fish})
+        '1)
+
+  (test/exn (interp-prog (list)
+                         '{instanceof 7 object})
+            "not an object")
+
 
   (test (interp-prog (list '{class snowball extends object
                                    {size}

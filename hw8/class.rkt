@@ -20,10 +20,13 @@
           (method-name : symbol)
           (arg-expr : ExprC)]
   [selectC (cnd : ExprC)
-           (obj-expr : ExprC)])
+           (obj-expr : ExprC)]
+  [instanceofC (obj-expr : ExprC)
+               (name : symbol)])
 
 (define-type ClassC
   [classC (name : symbol)
+          (super : symbol)
           (field-names : (listof symbol))
           (methods : (listof MethodC))])
 
@@ -72,11 +75,11 @@
 (module+ test
   (test/exn (find-class 'a empty)
             "not found")
-  (test (find-class 'a (list (classC 'a empty empty)))
-        (classC 'a empty empty))
-  (test (find-class 'b (list (classC 'a empty empty)
-                             (classC 'b empty empty)))
-        (classC 'b empty empty))
+  (test (find-class 'a (list (classC 'a 'object empty empty)))
+        (classC 'a 'object empty empty))
+  (test (find-class 'b (list (classC 'a 'object empty empty)
+                             (classC 'b 'object empty empty)))
+        (classC 'b 'object empty empty))
   (test (get-field 'a 
                    (list 'a 'b)
                    (list (numV 0) (numV 1)))
@@ -104,7 +107,7 @@
               (type-case Value (recur obj-expr)
                 [objV (class-name field-vals)
                       (type-case ClassC (find-class class-name classes)
-                        [classC (name field-names methods)
+                        [classC (name super field-names methods)
                                 (get-field field-name field-names 
                                            field-vals)])]
                 [else (error 'interp "not an object")])]
@@ -135,12 +138,20 @@
                                                         obj (numV 0))
                                            )]
                                  [else (error 'interp "not an object")])]
-                     [else (error 'interp "not a number")]))]))))
+                     [else (error 'interp "not a number")]))]
+        [instanceofC (obj-expr super-name)
+                     (local [(define obj (recur obj-expr))]
+                       (type-case Value obj
+                         [objV (class-name field-vals)
+                               (if (instance? classes class-name super-name)
+                                   (numV 0)
+                                   (numV 1))]
+                         [else (error 'interp "not an object")]))]))))
 
 (define (call-method class-name method-name classes
                      obj arg-val)
   (type-case ClassC (find-class class-name classes)
-    [classC (name field-names methods)
+    [classC (name super field-names methods)
             (type-case MethodC (find-method method-name methods)
               [methodC (name body-expr)
                        (interp body-expr
@@ -160,6 +171,30 @@
 (define (num+ x y) (num-op + '+ x y))
 (define (num* x y) (num-op * '* x y))
 
+
+;; isinstance -----------------------------
+(define (instance? [classes : (listof ClassC)] [class-name : symbol] [super-name : symbol]) : boolean
+  (cond
+    [(symbol=? 'object super-name) true]
+    [(symbol=? class-name 'object) false]
+    [(symbol=? class-name super-name) true]
+    [else
+     (let [(super-o (get-super classes class-name))]
+       (type-case (optionof symbol) super-o
+         [some (super) (instance? classes super super-name)]
+         [none () false]))]))
+
+(define (get-super [classes : (listof ClassC)] [class-name : symbol]) : (optionof symbol)
+  (cond
+    [(empty? classes) (none)]
+    [else (type-case ClassC (first classes)
+            [classC (name super field-names methods)
+                    (if (symbol=? name class-name)
+                        (some super)
+                        (get-super (rest classes) class-name))])]))
+                   
+
+
 ;; ----------------------------------------
 ;; Examples
 
@@ -167,6 +202,7 @@
   (define posn-class
     (classC 
      'posn
+     'object
      (list 'x 'y)
      (list (methodC 'mdist
                     (plusC (getC (thisC) 'x) (getC (thisC) 'y)))
@@ -181,21 +217,46 @@
   (define posn3D-class
     (classC 
      'posn3D
+     'posn
      (list 'x 'y 'z)
      (list (methodC 'mdist (plusC (getC (thisC) 'z)
                                   (ssendC (thisC) 'posn 'mdist (argC))))
            (methodC 'addDist (ssendC (thisC) 'posn 'addDist (argC))))))
+  (define posn4D-class
+    (classC 
+     'posn4D
+     'posn3D
+     (list 'x 'y 'z 'w)
+     (list (methodC 'mdist (plusC (getC (thisC) 'w)
+                                  (ssendC (thisC) 'posn3D 'mdist (argC))))
+           (methodC 'addDist (ssendC (thisC) 'posn3D 'addDist (argC))))))
   
   (define posn27 (newC 'posn (list (numC 2) (numC 7))))
   (define posn531 (newC 'posn3D (list (numC 5) (numC 3) (numC 1))))
   
   (define (interp-posn a)
-    (interp a (list posn-class posn3D-class) (numV -1) (numV -1))))
+    (interp a (list posn-class posn3D-class) (numV -1) (numV -1)))
+
+  (test (instance? (list posn3D-class posn-class) 'posn3D 'posn)
+        true)
+  (test (instance? (list posn3D-class posn-class) 'not-a-subclass 'posn)
+        false)
+  (test (instance? (list posn3D-class posn-class) 'not-a-subclass 'object)
+        true)
+  (test (instance? (list posn3D-class posn-class) 'posn 'posn3D)
+        false)
+  (test (instance? (list posn3D-class posn4D-class posn-class) 'posn4D 'posn)
+        true)
+  (test (instance? (list posn3D-class posn4D-class posn-class) 'posn4D 'posn3D)
+        true)
+  (test (instance? (list posn3D-class posn4D-class posn-class) 'object 'posn4D)
+        false))
 
 ;; select tests ---------------------------
 (module+ test
   (test (interp (selectC (numC 1) (newC 'test empty))
                 (list (classC 'test
+                              'object
                               empty
                               (list (methodC 'zero
                                              (numC 2))
@@ -206,6 +267,7 @@
         (numV 3))
   (test (interp (selectC (numC 0) (newC 'test empty))
                 (list (classC 'test
+                              'object
                               empty
                               (list (methodC 'zero
                                              (numC 2))
@@ -214,9 +276,9 @@
                 
                 (numV -1) (numV -1))
         (numV 2))
-
 (test (interp (selectC (numC 1) (newC 'test empty))
                 (list (classC 'test
+                              'object
                               empty
                               (list (methodC 'zero
                                              (numC 7))
@@ -227,6 +289,7 @@
         (numV 0))
   (test (interp (selectC (numC 0) (newC 'test empty))
                 (list (classC 'test
+                              'object
                               empty
                               (list (methodC 'zero
                                              (argC))
@@ -235,9 +298,9 @@
                 
                 (numV -1) (numV -1))
         (numV 0))
-  
   (test (interp (selectC (numC 2) (newC 'test empty))
                 (list (classC 'test
+                              'object
                               empty
                               (list (methodC 'zero
                                              (numC 2))
@@ -248,6 +311,7 @@
         (numV 3))
   (test/exn (interp (selectC (newC 'test empty) (newC 'test empty))
                     (list (classC 'test
+                                  'object
                                   empty
                                   (list (methodC 'zero
                                                  (numC 2))
@@ -258,6 +322,7 @@
             "not a number")
   (test/exn (interp (selectC (numC 0) (numC 4))
                 (list (classC 'test
+                              'object
                               empty
                               (list (methodC 'zero
                                              (numC 2))
@@ -268,6 +333,7 @@
         "not an object")
   (test/exn (interp (selectC (numC 2) (newC 'test empty))
                     (list (classC 'test
+                                  'object
                                   empty
                                   (list (methodC 'zero
                                                  (numC 2))
