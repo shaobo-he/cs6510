@@ -10,6 +10,7 @@
 
 (define (parse-class [s : s-expression]) : ClassI
   (cond
+    ;; Catch defining object class here???
    [(s-exp-match? `{class SYMBOL extends SYMBOL {ANY ...} ANY ...} s)
     (classI (s-exp->symbol (second (s-exp->list s)))
             (s-exp->symbol (fourth (s-exp->list s)))
@@ -46,6 +47,11 @@
    
    [(s-exp-match? '{new object} s)
     (newI 'object empty)]
+
+   [(s-exp-match? '{select ANY ANY} s)
+    (let ([ls (s-exp->list s)])
+      (selectI (parse (second ls))
+               (parse (third ls))))]
    
    [(s-exp-match? '{new SYMBOL ANY ...} s)
     (newI (s-exp->symbol (second (s-exp->list s)))
@@ -84,6 +90,12 @@
         (sendI (numI 1) 'm (numI 2)))
   (test (parse '{super m 1})
         (superI 'm (numI 1)))
+
+  (test (parse '{select 0 0})
+        (selectI (numI 0) (numI 0)))
+  (test (parse '{select 0 {new object}})
+        (selectI (numI 0) {newI 'object empty}))
+  
   (test/exn (parse `x)
             "invalid input")
 
@@ -118,6 +130,24 @@
       [objV (class-name field-vals) `object])))
 
 (module+ test
+
+  (test (interp-prog (list '{class snowball extends object
+                                   {size}
+                                   {zero this}
+                                   {nonzero {new snowball {+ 1 {get this size}}}}})
+                     '{get {select 0 {new snowball 1}} size})
+        '1)
+  (test (interp-prog (list '{class snowball extends object
+                                   {size}
+                                   {zero this}
+                                   {nonzero {new snowball {+ 1 {get this size}}}}})
+                     '{get {select {+ 1 2} {new snowball 1}} size})
+        '2)
+
+  (test (interp-prog (list)
+               '{new object})
+        `object)
+  
   (test (interp-prog
          (list
           '{class empty extends object

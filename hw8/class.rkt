@@ -18,7 +18,9 @@
   [ssendC (obj-expr : ExprC)
           (class-name : symbol)
           (method-name : symbol)
-          (arg-expr : ExprC)])
+          (arg-expr : ExprC)]
+  [selectC (cnd : ExprC)
+           (obj-expr : ExprC)])
 
 (define-type ClassC
   [classC (name : symbol)
@@ -42,11 +44,11 @@
 (define (make-find [name-of : ('a -> symbol)])
   (lambda ([name : symbol] [vals : (listof 'a)]) : 'a
     (cond
-     [(empty? vals)
-      (error 'find "not found")]
-     [else (if (equal? name (name-of (first vals)))
-               (first vals)
-               ((make-find name-of) name (rest vals)))])))
+      [(empty? vals)
+       (error 'find "not found")]
+      [else (if (equal? name (name-of (first vals)))
+                (first vals)
+                ((make-find name-of) name (rest vals)))])))
 
 (define find-class : (symbol (listof ClassC) -> ClassC)
   (make-find classC-name))
@@ -118,7 +120,22 @@
                 (local [(define obj (recur obj-expr))
                         (define arg-val (recur arg-expr))]
                   (call-method class-name method-name classes
-                               obj arg-val))]))))
+                               obj arg-val))]
+        
+        [selectC (cnd-expr obj-expr)
+                 (local [(define cnd (recur cnd-expr))
+                         (define obj (recur obj-expr))]
+                   (type-case Value cnd
+                     [numV (n) (type-case Value obj
+                                 [objV (class-name field-vals)
+                                       (if (zero? n)
+                                           (call-method class-name 'zero classes
+                                                        obj (numV 0))
+                                           (call-method class-name 'nonzero classes
+                                                        obj (numV 0))
+                                           )]
+                                 [else (error 'interp "not an object")])]
+                     [else (error 'interp "not a number")]))]))))
 
 (define (call-method class-name method-name classes
                      obj arg-val)
@@ -160,7 +177,7 @@
                     (plusC (getC (thisC) 'x) (argC)))
            (methodC 'multY (multC (argC) (getC (thisC) 'y)))
            (methodC 'factory12 (newC 'posn (list (numC 1) (numC 2)))))))
-
+  
   (define posn3D-class
     (classC 
      'posn3D
@@ -168,50 +185,136 @@
      (list (methodC 'mdist (plusC (getC (thisC) 'z)
                                   (ssendC (thisC) 'posn 'mdist (argC))))
            (methodC 'addDist (ssendC (thisC) 'posn 'addDist (argC))))))
-
+  
   (define posn27 (newC 'posn (list (numC 2) (numC 7))))
   (define posn531 (newC 'posn3D (list (numC 5) (numC 3) (numC 1))))
-
+  
   (define (interp-posn a)
     (interp a (list posn-class posn3D-class) (numV -1) (numV -1))))
 
-;; ----------------------------------------
-
+;; select tests ---------------------------
 (module+ test
-  (test (interp (numC 10) 
-                empty (numV -1) (numV -1))
-        (numV 10))
-  (test (interp (plusC (numC 10) (numC 17))
-                empty (numV -1) (numV -1))
-        (numV 27))
-  (test (interp (multC (numC 10) (numC 7))
-                empty (numV -1) (numV -1))
-        (numV 70))
+  (test (interp (selectC (numC 1) (newC 'test empty))
+                (list (classC 'test
+                              empty
+                              (list (methodC 'zero
+                                             (numC 2))
+                                    (methodC 'nonzero
+                                             (numC 3)))))
+                
+                (numV -1) (numV -1))
+        (numV 3))
+  (test (interp (selectC (numC 0) (newC 'test empty))
+                (list (classC 'test
+                              empty
+                              (list (methodC 'zero
+                                             (numC 2))
+                                    (methodC 'nonzero
+                                             (numC 3)))))
+                
+                (numV -1) (numV -1))
+        (numV 2))
 
-  (test (interp-posn (newC 'posn (list (numC 2) (numC 7))))
-        (objV 'posn (list (numV 2) (numV 7))))
-
-  (test (interp-posn (sendC posn27 'mdist (numC 0)))
-        (numV 9))
+(test (interp (selectC (numC 1) (newC 'test empty))
+                (list (classC 'test
+                              empty
+                              (list (methodC 'zero
+                                             (numC 7))
+                                    (methodC 'nonzero
+                                             (argC)))))
+                
+                (numV -1) (numV -1))
+        (numV 0))
+  (test (interp (selectC (numC 0) (newC 'test empty))
+                (list (classC 'test
+                              empty
+                              (list (methodC 'zero
+                                             (argC))
+                                    (methodC 'nonzero
+                                             (numC 3)))))
+                
+                (numV -1) (numV -1))
+        (numV 0))
   
-  (test (interp-posn (sendC posn27 'addX (numC 10)))
-        (numV 12))
-
-  (test (interp-posn (sendC (ssendC posn27 'posn 'factory12 (numC 0))
-                            'multY
-                            (numC 15)))
-        (numV 30))
-
-  (test (interp-posn (sendC posn531 'addDist posn27))
-        (numV 18))
-  
-  (test/exn (interp-posn (plusC (numC 1) posn27))
+  (test (interp (selectC (numC 2) (newC 'test empty))
+                (list (classC 'test
+                              empty
+                              (list (methodC 'zero
+                                             (numC 2))
+                                    (methodC 'nonzero
+                                             (numC 3)))))
+                
+                (numV -1) (numV -1))
+        (numV 3))
+  (test/exn (interp (selectC (newC 'test empty) (newC 'test empty))
+                    (list (classC 'test
+                                  empty
+                                  (list (methodC 'zero
+                                                 (numC 2))
+                                        (methodC 'nonzero
+                                                 (numC 3)))))
+                    
+                    (numV -1) (numV -1))
             "not a number")
-  (test/exn (interp-posn (getC (numC 1) 'x))
-            "not an object")
-  (test/exn (interp-posn (sendC (numC 1) 'mdist (numC 0)))
-            "not an object")
-  (test/exn (interp-posn (ssendC (numC 1) 'posn 'mdist (numC 0)))
-            "not an object")
-  (test/exn (interp-posn (newC 'posn (list (numC 0))))
-            "wrong field count"))
+  (test/exn (interp (selectC (numC 0) (numC 4))
+                (list (classC 'test
+                              empty
+                              (list (methodC 'zero
+                                             (numC 2))
+                                    (methodC 'nonzero
+                                             (numC 3)))))
+                
+                (numV -1) (numV -1))
+        "not an object")
+  (test/exn (interp (selectC (numC 2) (newC 'test empty))
+                    (list (classC 'test
+                                  empty
+                                  (list (methodC 'zero
+                                                 (numC 2))
+                                        (methodC 'missing
+                                                 (numC 3)))))
+                
+                    (numV -1) (numV -1))
+            "not found"))
+  
+  ;; ----------------------------------------
+  
+  (module+ test
+    (test (interp (numC 10) 
+                  empty (numV -1) (numV -1))
+          (numV 10))
+    (test (interp (plusC (numC 10) (numC 17))
+                  empty (numV -1) (numV -1))
+          (numV 27))
+    (test (interp (multC (numC 10) (numC 7))
+                  empty (numV -1) (numV -1))
+          (numV 70))
+    
+    (test (interp-posn (newC 'posn (list (numC 2) (numC 7))))
+          (objV 'posn (list (numV 2) (numV 7))))
+    
+    (test (interp-posn (sendC posn27 'mdist (numC 0)))
+          (numV 9))
+    
+    (test (interp-posn (sendC posn27 'addX (numC 10)))
+          (numV 12))
+    
+    (test (interp-posn (sendC (ssendC posn27 'posn 'factory12 (numC 0))
+                              'multY
+                              (numC 15)))
+          (numV 30))
+    
+    (test (interp-posn (sendC posn531 'addDist posn27))
+          (numV 18))
+    
+    (test/exn (interp-posn (plusC (numC 1) posn27))
+              "not a number")
+    (test/exn (interp-posn (getC (numC 1) 'x))
+              "not an object")
+    (test/exn (interp-posn (sendC (numC 1) 'mdist (numC 0)))
+              "not an object")
+    (test/exn (interp-posn (ssendC (numC 1) 'posn 'mdist (numC 0)))
+              "not an object")
+    (test/exn (interp-posn (newC 'posn (list (numC 0))))
+              "wrong field count"))
+  
