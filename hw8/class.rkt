@@ -131,12 +131,13 @@
                    (type-case Value cnd
                      [numV (n) (type-case Value obj
                                  [objV (class-name field-vals)
-                                       (if (zero? n)
-                                           (call-method class-name 'zero classes
-                                                        obj (numV 0))
-                                           (call-method class-name 'nonzero classes
-                                                        obj (numV 0))
-                                           )]
+                                       (call-method class-name
+                                                    (if (zero? n)
+                                                        'zero
+                                                        'nonzero)
+                                                    classes
+                                                    obj (numV 0))]
+
                                  [else (error 'interp "not an object")])]
                      [else (error 'interp "not a number")]))]
         [instanceofC (obj-expr super-name)
@@ -254,6 +255,10 @@
 
 ;; select tests ---------------------------
 (module+ test
+  (define test-object-class (classC 'object
+                                    'object
+                                    empty
+                                    empty))
   (test (interp (selectC (numC 1) (newC 'test empty))
                 (list (classC 'test
                               'object
@@ -341,8 +346,34 @@
                                                  (numC 3)))))
                 
                     (numV -1) (numV -1))
-            "not found"))
-  
+            "not found")
+  (test (interp (instanceofC  {newC 'posn3D (list (numC 1) (numC 2) (numC 3))} 'posn)
+                (list posn3D-class posn-class) (numV -1) (numV -1))
+        (numV 0))
+  (test (interp (instanceofC {newC 'posn (list (numC 1) (numC 2))} 'posn3D)
+                (list posn3D-class posn-class) (numV -1) (numV -1))
+        (numV 1))
+  (test (interp (instanceofC {newC 'posn4D (list (numC 1) (numC 2) (numC 3) (numC 4))} 'posn)
+                (list posn3D-class posn4D-class posn-class) (numV -1) (numV -1))
+        (numV 0))
+  (test (interp (instanceofC {newC 'posn4D (list (numC 1) (numC 2) (numC 3) (numC 4))} 'posn3D)
+                (list posn3D-class posn4D-class posn-class) (numV -1) (numV -1))
+        (numV 0))
+  (test (interp (instanceofC {newC 'object empty} 'posn4D)
+                (list test-object-class posn3D-class posn4D-class posn-class)
+                (numV -1) (numV -1))
+        (numV 1))
+  (test (interp (instanceofC {newC 'object empty} 'object)
+                (list test-object-class posn3D-class posn4D-class posn-class)
+                (numV -1) (numV -1))
+        (numV 0))
+  (test (interp (instanceofC {newC 'posn4D (list (numC 1) (numC 2) (numC 3) (numC 4))} 'object)
+                (list posn3D-class posn4D-class posn-class) (numV -1) (numV -1))
+        (numV 0))
+  (test/exn (interp (instanceofC (numC 2) 'object)
+                    (list posn3D-class posn4D-class posn-class) (numV -1) (numV -1))
+            "not an object"))
+
   ;; ----------------------------------------
   
   (module+ test
