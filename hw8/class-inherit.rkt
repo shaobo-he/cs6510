@@ -181,18 +181,18 @@
     [(symbol=? class-name 'object) false]
     [(symbol=? class-name super-name) true]
     [else
-     (let [(super-o (get-super classes class-name))]
-       (type-case (optionof symbol) super-o
-         [some (super) (instance? classes super super-name)]
-         [none () false]))]))
+     (instance? classes
+                (get-super classes class-name)
+                super-name)]))
 
-(define (get-super [classes : (listof ClassC)] [class-name : symbol]) : (optionof symbol)
+(define (get-super [classes : (listof ClassC)] [class-name : symbol]) : symbol
   (cond
-    [(empty? classes) (none)]
+    [(empty? (rest classes)) (classC-super (first classes))] ;; If we've made it this far, then class-name
+                                                             ;; is definitely a valid class in the program
     [else (type-case ClassC (first classes)
             [classC (name super field-names methods)
                     (if (symbol=? name class-name)
-                        (some super)
+                        super
                         (get-super (rest classes) class-name))])]))
                    
 
@@ -240,10 +240,6 @@
     (interp a (list posn-class posn3D-class) (numV -1) (numV -1)))
 
   (test (instance? (list posn3D-class posn-class) 'posn3D 'posn)
-        true)
-  (test (instance? (list posn3D-class posn-class) 'not-a-subclass 'posn)
-        false)
-  (test (instance? (list posn3D-class posn-class) 'not-a-subclass 'object)
         true)
   (test (instance? (list posn3D-class posn-class) 'posn 'posn3D)
         false)
@@ -415,6 +411,11 @@
               "not an object")
     (test/exn (interp-posn (newC 'posn (list (numC 0))))
               "wrong field count"))
+
+;; Make all "class.rkt" definitions available here, where
+;; the "class.rkt" file must be in the same directory
+;; as this one:
+
 (define-type ExprI
   [numI (n : number)]
   [plusI (lhs : ExprI)
