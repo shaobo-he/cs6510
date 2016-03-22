@@ -137,7 +137,7 @@
      (let ([inputs (reverse (rest (rest (reverse (s-exp->list s)))))]) ;; yes...
        (arrowT (map (λ (t)
                       (parse-type t)) inputs)
-               (parse-type (third (s-exp->list s)))))]
+               (parse-type (first (reverse (s-exp->list s))))))]
     [else (error 'parse-type "invalid input")]))
 
 (module+ test
@@ -483,6 +483,9 @@
             "no type")
   
   ;; Third part tests
+  (test (typecheck (parse '{lambda {[f : (-> num)]}
+                             {f}}) mt-env)
+        (arrowT (list (arrowT empty (numT))) (numT)))
   (test (interp (parse '{{lambda {}
                            10}})
                 mt-env)
