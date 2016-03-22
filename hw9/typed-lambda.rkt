@@ -143,6 +143,8 @@
 (module+ test
   (test/exn (parse '{})
             "invalid input")
+  (test (parse-type '{num bool {num -> bool} -> bool})
+        (arrowT (list (numT) (boolT) (arrowT (list (numT)) (boolT))) (boolT)))
   (test (parse '2)
         (numC 2))
   (test (parse `x) ; note: backquote instead of normal quote
