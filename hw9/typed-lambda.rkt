@@ -145,6 +145,9 @@
             "invalid input")
   (test (parse-type '{num bool {num -> bool} -> bool})
         (arrowT (list (numT) (boolT) (arrowT (list (numT)) (boolT))) (boolT)))
+  (test (parse-type '((num * bool) * (bool * num)))
+        (consT (consT (numT) (boolT))
+               (consT (boolT) (numT))))
   (test (parse '2)
         (numC 2))
   (test (parse `x) ; note: backquote instead of normal quote
@@ -166,6 +169,16 @@
         (appC (idC 'double) (list (numC 9))))
   (test (parse '{{+ 1 2}})
         (appC {plusC (numC 1) (numC 2)} empty))
+
+  (test (parse '{lambda {[x : num] [y : bool] [z : bool]}
+                  2})
+        (lamC (list 'x 'y 'z) (list (numT) (boolT) (boolT)) (numC 2)))
+  (test (parse '{lambda {} 2})
+        (lamC empty empty (numC 2)))
+  (test (parse '{f})
+        (appC (idC 'f) empty))
+  (test (parse '{f 1 true})
+        (appC (idC 'f) (list (numC 1) (boolC true))))
   
   (test (parse-type `num)
         (numT))
@@ -253,6 +266,18 @@
   (test (interp (parse '{{lambda {[x : num]} {+ x x}} 8})
                 mt-env)
         (numV 16))
+
+  (test (interp (parse '{{lambda {} 2}}) mt-env)
+        (numV 2))
+  (test (interp (parse '{{lambda {[x : num] [y : bool]}
+                           {cons x y}} 2 false}) mt-env)
+        (consV (numV 2) (boolV false)))
+  (test (interp (parse '{first {cons 2 {cons 3 4}}})
+                mt-env)
+        (numV 2))
+  (test (interp (parse '{rest {cons 2 {cons 3 4}}})
+                mt-env)
+        (consV (numV 3) (numV 4)))
   
   (test/exn (interp (parse '{1 2}) mt-env)
             "not a function")
@@ -283,7 +308,13 @@
   (test (num+ (numV 1) (numV 2))
         (numV 3))
   (test (num* (numV 2) (numV 3))
-        (numV 6)))
+        (numV 6))
+  (test (num= (numV 2) (numV 3))
+        (boolV false))
+  (test (num= (numV 2) (numV 2))
+        (boolV true))
+  (test/exn (num= (boolV true) (numV 2))
+            "not a number"))
 
 ;; lookup ----------------------------------------
 (define (make-lookup [name-of : ('a -> symbol)] [val-of : ('a -> 'b)])
@@ -340,17 +371,20 @@
     [appC (fun args)
           (type-case Type (typecheck fun tenv)
             [arrowT (arg-types result-type)
-                    (let ([args-check (foldr (λ (a b)
-                                               (and a b))
-                                             true
-                                             (map2 equal? arg-types
-                                                   (map (λ (a)
-                                                          (typecheck a tenv))
-                                                        args)))])
-                      (if args-check
-                          result-type
-                          (type-error args
-                                      (to-string arg-types))))]
+                    (if (equal? (length args) (length arg-types))
+                        (let 
+                            ([args-check (foldr (λ (a b)
+                                                  (and a b))
+                                                true
+                                                (map2 equal? arg-types
+                                                      (map (λ (a)
+                                                             (typecheck a tenv))
+                                                           args)))])
+                          (if args-check
+                              result-type
+                              (type-error args
+                                          (to-string arg-types))))
+                        (type-error fun "arity mismatch"))]
             [else (type-error fun "function")])]
     
     [consC (f s)
@@ -386,6 +420,8 @@
 (module+ test
   (test/exn (interp (parse '{{lambda {[x : num]} x}}) mt-env)
             "arity mismatch")
+  (test/exn (typecheck (parse '{{lambda {[x : num]} x}}) mt-env)
+            "no type")
   
   ;; new tests
   (test (interp (parse '{if true 1 2}) mt-env)
