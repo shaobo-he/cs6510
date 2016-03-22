@@ -4,12 +4,18 @@
 (define-type Value
   [numV (n : number)]
   [boolV (b : boolean)]
+  [consV (car : Value)
+         (cdr : Value)]
   [closV (arg : symbol)
          (body : ExprC)
          (env : Env)])
 
 (define-type ExprC
   [numC (n : number)]
+  [consC (car : ExprC)
+         (cdr : ExprC)]
+  [carC (cons : ExprC)]
+  [cdrC (cons : ExprC)]
   [boolC (b : boolean)]
   [idC (s : symbol)]
   [plusC (l : ExprC) 
@@ -30,6 +36,8 @@
 (define-type Type
   [numT]
   [boolT]
+  [consT (car : Type)
+         (cdr : Type)]
   [arrowT (arg : Type)
           (result : Type)])
 
@@ -71,6 +79,18 @@
        (ifC (parse (second ls))
             (parse (third ls))
             (parse (fourth ls))))]
+
+    [(s-exp-match? '{cons ANY ANY} s)
+     (let ([ls (s-exp->list s)])
+       (consC (parse (second ls))
+              (parse (third ls))))]
+
+    [(s-exp-match? '{first ANY} s)
+     (carC (parse (second (s-exp->list s))))]
+
+    [(s-exp-match? '{rest ANY} s)
+     (cdrC (parse (second (s-exp->list s))))]
+                   
     
     [(s-exp-match? '{* ANY ANY} s)
      (multC (parse (second (s-exp->list s)))
@@ -101,6 +121,10 @@
     (numT)]
    [(s-exp-match? `bool s)
     (boolT)]
+   [(s-exp-match? '{ANY * ANY} s)
+    (consT (parse-type (first (s-exp->list s)))
+           (parse-type (third (s-exp->list s))))]
+
    [(s-exp-match? `(ANY -> ANY) s)
     (arrowT (parse-type (first (s-exp->list s)))
             (parse-type (third (s-exp->list s))))]
@@ -164,7 +188,18 @@
            [boolV (b) (if b
                           (interp thn env)
                           (interp els env))]
-           [else (error 'interp "not a boolean")])]))
+           [else (error 'interp "not a boolean")])]
+    [consC (f s)
+           (consV (interp f env)
+                  (interp s env))]
+    [carC (cell)
+          (type-case Value (interp cell env)
+            [consV (car cdr) car]
+            [else (error 'interp "not a cons")])]
+    [cdrC (cell)
+          (type-case Value (interp cell env)
+            [consV (car cdr) cdr]
+            [else (error 'interp "not a cons")])]))
 
 (module+ test
   (test (interp (parse '2) mt-env)
@@ -290,7 +325,18 @@
                         result-type
                         (type-error arg
                                     (to-string arg-type)))]
-            [else (type-error fun "function")])]))
+            [else (type-error fun "function")])]
+
+    [consC (f s)
+           (let ([ft (typecheck f tenv)]
+                 [st (typecheck s tenv)])
+             (consT ft st))]
+    [carC (cell) (type-case Type (typecheck cell tenv)
+                   [consT (f s) f]
+                   [else (type-error cell "cons")])]
+    [cdrC (cell) (type-case Type (typecheck cell tenv)
+                   [consT (f s) s]
+                   [else (type-error cell "cons")])]))
 
 (define (typecheck-nums l r out-type tenv)
   (type-case Type (typecheck l tenv)
@@ -344,6 +390,71 @@
         (boolT))
   
   (test/exn (typecheck (parse '{+ 1 {if true true false}})
+                       mt-env)
+            "no type")
+
+
+  ;; Second tests
+  (test/exn (typecheck (parse '{rest 1}) mt-env)
+            "no type")
+  (test/exn (interp (parse '{first 1}) mt-env)
+            "not a cons")
+  (test/exn (interp (parse '{rest 1}) mt-env)
+            "not a cons")
+  (test (interp (parse '{cons 10 8})
+                mt-env)
+        ;; Your constructor might be different than consV:
+        (consV (numV 10) (numV 8)))
+  
+  (test (interp (parse '{first {cons 10 8}})
+                mt-env)
+        (numV 10))
+  
+  (test (interp (parse '{rest {cons 10 8}})
+                mt-env)
+        (numV 8))
+  
+  (test (typecheck (parse '{cons 10 8})
+                   mt-env)
+        (consT (numT) (numT)))
+  
+  (test (typecheck (parse '{first {cons 10 8}})
+                   mt-env)
+        (numT))
+  
+  (test (typecheck (parse '{+ 1 {rest {cons 10 8}}})
+                   mt-env)
+        (numT))
+  
+  (test (typecheck (parse '{lambda {[x : (num * bool)]}
+                             {first x}})
+                   mt-env)
+        (arrowT (consT (numT) (boolT)) (numT)))
+  
+  (test (typecheck (parse '{{lambda {[x : (num * bool)]}
+                              {first x}}
+                            {cons 1 false}})
+                   mt-env)
+        (numT))
+  
+  (test (typecheck (parse '{{lambda {[x : (num * bool)]}
+                              {rest x}}
+                            {cons 1 false}})
+                   mt-env)
+        (boolT))
+  
+  (test/exn (typecheck (parse '{first 10})
+                       mt-env)
+            "no type")
+  
+  (test/exn (typecheck (parse '{+ 1 {first {cons false 8}}})
+                       mt-env)
+            "no type")
+  
+  (test/exn (typecheck (parse '{lambda {[x : (num * bool)]}
+                                 {if {first x}
+                                     1
+                                     2}})
                        mt-env)
             "no type")
   
