@@ -207,7 +207,7 @@
                                                                 (interp a env)) args)]
                                                  [bound-args (map2 (λ (n a)
                                                                      (bind n a)) ns args-i)])
-                                            (foldr extend-env c-env bound-args)))
+                                            (foldl extend-env c-env bound-args)))
                                   (error 'interp "arity mismatch"))]
                        [else (error 'interp "not a function")])]
     [eqC (l r)
@@ -363,7 +363,7 @@
     [lamC (ns arg-types body)
           (arrowT arg-types
                   (typecheck body
-                             (foldr extend-env  
+                             (foldl extend-env  
                                     tenv (map2 (λ (n a)
                                                  (tbind n a))
                                                ns
@@ -373,7 +373,7 @@
             [arrowT (arg-types result-type)
                     (if (equal? (length args) (length arg-types))
                         (let 
-                            ([args-check (foldr (λ (a b)
+                            ([args-check (foldl (λ (a b)
                                                   (and a b))
                                                 true
                                                 (map2 equal? arg-types
@@ -421,6 +421,10 @@
   (test/exn (interp (parse '{{lambda {[x : num]} x}}) mt-env)
             "arity mismatch")
   (test/exn (typecheck (parse '{{lambda {[x : num]} x}}) mt-env)
+            "no type")
+  (test (typecheck (parse '{{lambda {[x : bool] [y : num]} x} true  2}) mt-env)
+        (boolT))
+  (test/exn (typecheck (parse '{{lambda {[x : bool] [y : num]} x} 2 true}) mt-env)
             "no type")
   
   ;; new tests
@@ -570,8 +574,13 @@
                                {f x}}}
                          false 7 {lambda {[x : num]} {* x 2}}}) mt-env)
         (numV 14))
-  
-  
+
+  (test (typecheck (parse '{lambda {[x : num]}
+                             {lambda {[y : bool]}
+                               2}}) mt-env)
+        (arrowT (list (numT)) (arrowT (list (boolT)) (numT))))
+  (test (parse-type '{{num -> bool} -> num})
+        (arrowT (list (arrowT (list (numT)) (boolT))) (numT)))
   
   
   ;; old tests
