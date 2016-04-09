@@ -32,40 +32,46 @@
   (print-only-errors true))
 
 ;; parse ----------------------------------------
-(define parse : (s-expression (s-expression -> boolean)
-                              (s-expression -> (ExprC 'L)) -> (ExprC 'l))
-  (lambda (s lit-match lit-res)
-    (cond
-      [(lit-match s) (lit-res s)]
-      [(s-exp-match? `SYMBOL s) (idC (s-exp->symbol s))]
-      [(s-exp-match? '{+ ANY ANY} s)
-       (plusC (parse (second (s-exp->list s)) lit-match lit-res)
-              (parse (third (s-exp->list s)) lit-match lit-res))]
-      [(s-exp-match? '{* ANY ANY} s)
-       (multC (parse (second (s-exp->list s)) lit-match lit-res)
-              (parse (third (s-exp->list s)) lit-match lit-res))]
-      [(s-exp-match? '{let {[SYMBOL ANY]} ANY} s)
-       (let ([bs (s-exp->list (first
-                               (s-exp->list (second
-                                             (s-exp->list s)))))])
-         (appC (lamC (s-exp->symbol (first bs))
-                     (parse (third (s-exp->list s)) lit-match lit-res))
-               (parse (second bs) lit-match lit-res)))]
-      [(s-exp-match? '{lambda {SYMBOL} ANY} s)
-       (lamC (s-exp->symbol (first (s-exp->list 
-                                    (second (s-exp->list s)))))
-             (parse (third (s-exp->list s)) lit-match lit-res))]
-      [(s-exp-match? '{ANY ANY} s)
-       (appC (parse (first (s-exp->list s)) lit-match lit-res)
-             (parse (second (s-exp->list s)) lit-match lit-res))]
-      [else (error 'parse "invalid input")])))
+(define parse-cons : ((s-expression -> boolean)
+                      (s-expression -> (ExprC 'L)) -> (s-expression -> (ExprC 'l)))
+  (lambda (lit-match lit-res)
+    (letrec ([parse
+              (lambda (s)
+                (cond
+                  [(lit-match s) (lit-res s)]
+                  [(s-exp-match? `SYMBOL s) (idC (s-exp->symbol s))]
+                  [(s-exp-match? '{+ ANY ANY} s)
+                   (plusC (parse (second (s-exp->list s)))
+                          (parse (third (s-exp->list s))))]
+                  [(s-exp-match? '{* ANY ANY} s)
+                   (multC (parse (second (s-exp->list s)))
+                          (parse (third (s-exp->list s))))]
+                  [(s-exp-match? '{let {[SYMBOL ANY]} ANY} s)
+                   (let ([bs (s-exp->list (first
+                                           (s-exp->list (second
+                                                         (s-exp->list s)))))])
+                     (appC (lamC (s-exp->symbol (first bs))
+                                 (parse (third (s-exp->list s))))
+                           (parse (second bs))))]
+                  [(s-exp-match? '{lambda {SYMBOL} ANY} s)
+                   (lamC (s-exp->symbol (first (s-exp->list 
+                                                (second (s-exp->list s)))))
+                         (parse (third (s-exp->list s))))]
+                  [(s-exp-match? '{ANY ANY} s)
+                   (appC (parse (first (s-exp->list s)))
+                         (parse (second (s-exp->list s))))]
+                  [else (error 'parse "invalid input")]))])
+      parse)))
 
 (define (parse/str [s : s-expression]) : (ExprC string)
-  (parse s (λ (s) (s-exp-match? `STRING s))
-         (λ (s) (litC (s-exp->string s)))))
+  (let ([parse (parse-cons
+                (λ (s) (s-exp-match? `STRING s))
+                (λ (s) (litC (s-exp->string s))))])
+    (parse s)))
 (define (parse/num [s : s-expression]) : (ExprC number)
-  (parse s (λ (s) (s-exp-match? `NUMBER s))
-         (λ (s) (litC (s-exp->number s)))))
+  (let ([parse (parse-cons (λ (s) (s-exp-match? `NUMBER s))
+                           (λ (s) (litC (s-exp->number s))))])
+    (parse s)))
 
 (module+ test
   (test (parse/str '"a")
@@ -118,28 +124,33 @@
 (define-type-alias (Binop 'l) ((Value 'l) (Value 'l) -> (Value 'l)))
 
 ;; interp ----------------------------------------
-(define interp : ((ExprC 'l) Env Binop Binop -> (Value 'l))
-  (lambda (a env lit+ lit*)
-    (type-case (ExprC 'l) a
-      [litC (n) (litV n)]
-      [idC (s) (lookup s env)]
-      [plusC (l r) (lit+ (interp l env lit+ lit*) (interp r env lit+ lit*))]
-      [multC (l r) (lit* (interp l env lit+ lit*) (interp r env lit+ lit*))]
-      [lamC (n body)
-            (closV n body env)]
-      [appC (fun arg) (type-case (Value 'l) (interp fun env lit+ lit*)
-                        [closV (n body c-env)
-                               (interp body
-                                       (extend-env
-                                        (bind n
-                                              (interp arg env lit+ lit*))
-                                        c-env) lit+ lit*)]
-                        [else (error 'interp "not a function")])])))
+(define interp-cons : (Binop Binop -> ((ExprC 'l) Env -> (Value 'l)))
+  (lambda (lit+ lit*)
+    (letrec ([interp
+               (lambda (a env)
+                 (type-case (ExprC 'l) a
+                   [litC (n) (litV n)]
+                   [idC (s) (lookup s env)]
+                   [plusC (l r) (lit+ (interp l env) (interp r env))]
+                   [multC (l r) (lit* (interp l env) (interp r env))]
+                   [lamC (n body)
+                         (closV n body env)]
+                   [appC (fun arg) (type-case (Value 'l) (interp fun env)
+                                     [closV (n body c-env)
+                                            (interp body
+                                                    (extend-env
+                                                     (bind n
+                                                           (interp arg env))
+                                                     c-env))]
+                                     [else (error 'interp "not a function")])]))])
+             interp)))
 
 (define (interp/str [a : (ExprC string)] [env : Env]) : (Value string)
-  (interp a env str+ str*))
+  (let ([interp (interp-cons str+ str*)])
+    (interp a env)))
 (define (interp/num [a : (ExprC number)] [env : Env]) : (Value number)
-  (interp a env num+ num*))
+  (let ([interp (interp-cons num+ num*)])
+    (interp a env)))
 
 (module+ test
   (test (interp/num (parse/num '2) mt-env)
