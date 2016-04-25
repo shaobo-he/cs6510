@@ -1,5 +1,7 @@
 #lang plai-typed
 
+
+
 (require "class.rkt"
          "inherit.rkt")
 
@@ -120,10 +122,10 @@
 
 ;; ----------------------------------------
 
-(define typecheck-expr : (ExprI (listof ClassT) Type Type -> Type)
-  (lambda (expr t-classes arg-type this-type)
+(define typecheck-expr : (ExprI (listof ClassT) Type Type boolean -> Type)
+  (lambda (expr t-classes arg-type this-type is-main)
     (local [(define (recur expr)
-              (typecheck-expr expr t-classes arg-type this-type))
+              (typecheck-expr expr t-classes arg-type this-type is-main))
             (define (typecheck-nums l r)
               (type-case Type (recur l)
                 [numT ()
@@ -135,8 +137,12 @@
         [numI (n) (numT)]
         [plusI (l r) (typecheck-nums l r)]
         [multI (l r) (typecheck-nums l r)]
-        [argI () arg-type]
-        [thisI () this-type]
+        [argI () (if is-main
+                     (error 'typecheck "\"arg\" not allowed in main expression")
+                     arg-type)]
+        [thisI ()  (if is-main
+                       (error 'typecheck "\"this\" not allowed in main expression")
+                       this-type)]
         [newI (class-name exprs)
               (local [(define arg-types (map recur exprs))
                       (define field-types
@@ -202,7 +208,7 @@
   (type-case MethodT method
     [methodT (name arg-type result-type body-expr)
              (if (is-subtype? (typecheck-expr body-expr t-classes
-                                              arg-type this-type)
+                                              arg-type this-type false)
                               result-type
                               t-classes)
                  (values)
@@ -244,7 +250,7 @@
     (map (lambda (t-class)
            (typecheck-class t-class t-classes))
          t-classes)
-    (typecheck-expr a t-classes (numT) (objT 'bad))))
+    (typecheck-expr a t-classes (numT) (objT 'bad) true)))
 
 ;; ----------------------------------------
 
@@ -294,7 +300,7 @@
   (test (typecheck (multI (numI 1) (numI 2))
                    empty)
         (numT))
-
+  
   (test/exn (typecheck-posn (sendI (numI 10) 'mdist (numI 0)))
             "no type")
   (test/exn (typecheck-posn (sendI posn27 'mdist posn27))
@@ -319,6 +325,7 @@
                                                     (objT 'object) (numT)
                                                     (numI 10))))))
             "bad override")
+            
   (test/exn (typecheck-method (methodT 'm (numT) (objT 'object) (numI 0)) (objT 'object) empty)
             "no type")
   (test/exn (typecheck (numI 0)

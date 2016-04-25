@@ -85,6 +85,14 @@
       [objV (class-name field-vals) `object])))
 
 (module+ test
+  ;; 1. Fix arg/this tests
+  (test (interp-t-prog
+         (list
+          '{class empty extends object
+                  {}})
+         '{+ arg 2})
+        '1)
+  
   (test (interp-t-prog
          (list
           '{class empty extends object
@@ -111,3 +119,5 @@
         
         '{send {new posn3D 5 3 1} addDist {new posn 2 7}})
        '18))
+(trace parse-t-field)
+ 
