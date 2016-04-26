@@ -10,11 +10,10 @@
   (print-only-errors true))
 
 (module+ test
-  ;; 1. instanceof form
+  ;; 1.
   
-  ;; 
-
+  ;;
   
 )
   
-  ;; End 1. instanceof form
+  ;; End 1. 
