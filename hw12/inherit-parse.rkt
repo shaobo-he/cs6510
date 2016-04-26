@@ -67,6 +67,18 @@
        (if0I (parse (second ls))
              (parse (third ls))
              (parse (fourth ls))))]
+
+    ;; begin
+    [(s-exp-match? '{begin ANY ANY ...} s)
+     (beginI (map parse (rest (s-exp->list s))))]
+    
+    ;; set
+    [(s-exp-match? '{set ANY SYMBOL ANY} s)
+     (let ([ls (s-exp->list s)])
+       (setI (parse (second ls))
+             (s-exp->symbol (third ls))
+             (parse (fourth ls))))]
+     
     
     [else (error 'parse "invalid input")]))
 
@@ -117,6 +129,21 @@
         (instanceofI (thisI) 'some-class))
   (test (parse '{instanceof 2 something})
         (instanceofI (numI 2) 'something))
+
+  ;; test
+  (test (parse '{if0 arg this 1})
+        (if0I (argI) (thisI) (numI 1)))
+
+  ;; begin
+  (test (parse '{begin 1 2 3 this arg {+ 1 2}})
+        (beginI (list (numI 1) (numI 2) (numI 3)
+                      (thisI) (argI) (plusI (numI 1) (numI 2)))))
+
+  ;; set
+  (test (parse '{set {new posn3D 1 2 3} x {+ 99 42}})
+        (setI (newI 'posn3D (list (numI 1) (numI 2) (numI 3)))
+              'x
+              (plusI (numI 99) (numI 42))))
   )
 
 ;; ----------------------------------------

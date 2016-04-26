@@ -20,6 +20,7 @@
   [sendI (obj-expr : ExprI)
          (method-name : symbol)
          (arg-expr : ExprI)]
+  [beginI (exprs : (listof ExprI))]
   [superI (method-name : symbol)
           (arg-expr : ExprI)]
   
@@ -31,6 +32,11 @@
   [if0I (cnd : ExprI)
         (thn : ExprI)
         (els : ExprI)]
+
+  ;; p6 set
+  [setI (obj-expr : ExprI)
+        (name : symbol)
+        (val-expr : ExprI)]
   )
 
 (define-type ClassI
@@ -74,7 +80,12 @@
                    (instanceofC (expr-i->c class-expr super-name)
                                 super)]
       [if0I (cnd thn els)
-            (if0C (recur cnd) (recur thn) (recur els))])))
+            (if0C (recur cnd) (recur thn) (recur els))]
+      [beginI (exprs)
+              (beginC (map recur exprs))]
+      [setI (obj-expr name val-expr)
+            (setC (recur obj-expr) name (recur val-expr))]
+      )))
 
 (module+ test
   (test (expr-i->c (numI 10) 'object)
@@ -98,6 +109,24 @@
   ;; instanceof
   (test (expr-i->c (instanceofI (newI 'empty empty) 'some-class) 'object)
           (instanceofC (newC 'empty empty) 'some-class))
+  ;; if0
+  (test (expr-i->c (if0I (argI) (thisI) (numI 1)) 'object)
+        (if0C (argC) (thisC) (numC 1)))
+
+  ;; begin
+  (test (expr-i->c (beginI (list (numI 1) (numI 2) (numI 3)
+                      (thisI) (argI) (plusI (numI 1) (numI 2)))) 'object)
+        (beginC (list (numC 1) (numC 2) (numC 3)
+                      (thisC) (argC) (plusC (numC 1) (numC 2)))))
+
+  ;; set
+  (test (expr-i->c (setI (newI 'posn3D (list (numI 1) (numI 2) (numI 3)))
+              'x
+              (plusI (numI 99) (numI 42))) 'object)
+        (setC (newC 'posn3D (list (numC 1) (numC 2) (numC 3)))
+              'x
+              (plusC (numC 99) (numC 42))))
+  
   )
 
 ;; ----------------------------------------

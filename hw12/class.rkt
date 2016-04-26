@@ -28,6 +28,14 @@
   [if0C (cnd : ExprC)
         (thn : ExprC)
         (els : ExprC)]
+
+  ;; begin
+  [beginC (exprs : (listof ExprC))]
+
+  ;; set
+  [setC (obj-expr : ExprC)
+        (name : symbol)
+        (val-expr : ExprC)]
   )
 
 (define-type ClassC
@@ -43,7 +51,7 @@
 (define-type Value
   [numV (n : number)]
   [objV (class-name : symbol)
-        (field-values : (listof Value))])
+        (field-values : (listof (boxof Value)))])
 
 (module+ test
   (print-only-errors true))
@@ -71,7 +79,14 @@
 
 (define (get-field [name : symbol] 
                    [field-names : (listof symbol)] 
-                   [vals : (listof Value)])
+                   [vals : (listof (boxof Value))])
+  ;; Pair fields and values, find by field name,
+  ;; then extract value from pair
+ (unbox (get-field-raw name field-names vals)))
+
+(define (get-field-raw [name : symbol] 
+                   [field-names : (listof symbol)] 
+                   [vals : (listof (boxof Value))])
   ;; Pair fields and values, find by field name,
   ;; then extract value from pair
   (kons-rest ((make-find kons-first)
@@ -88,7 +103,7 @@
         (classC 'b empty empty 'object))
   (test (get-field 'a 
                    (list 'a 'b)
-                   (list (numV 0) (numV 1)))
+                   (list (box (numV 0)) (box (numV 1))))
         (numV 0)))
 
 ;; ----------------------------------------
@@ -107,16 +122,10 @@
               (local [(define c (find-class class-name classes))
                       (define vals (map recur field-exprs))]
                 (if (= (length vals) (length (classC-field-names c)))
-                    (objV class-name vals)
+                    (objV class-name (map box vals))
                     (error 'interp "wrong field count")))]
         [getC (obj-expr field-name)
-              (type-case Value (recur obj-expr)
-                [objV (class-name field-vals)
-                      (type-case ClassC (find-class class-name classes)
-                        [classC (name field-names methods super-name)
-                                (get-field field-name field-names 
-                                           field-vals)])]
-                [else (error 'interp "not an object")])]
+              (unbox (interp-get-field obj-expr classes field-name recur))]
         [sendC (obj-expr method-name arg-expr)
                (local [(define obj (recur obj-expr))
                        (define arg-val (recur arg-expr))]
@@ -143,9 +152,32 @@
         ;; if0
         [if0C (cnd thn els)
               (let ([cond (recur cnd)])
-                (if (eq? (numV-n cond) 0)
+                (if (eq? (numV-n cond) 0) ;; Typecheck ftw
                     (recur thn)
-                    (recur els)))]))))
+                    (recur els)))]
+
+        ;; begin
+        [beginC (exprs)
+                (numV 0)]
+        
+        ;; set. The interpreter defines the result of set
+        ;; to be the old value of the set field.
+        [setC (obj-expr field-name val-expr)
+              (let ([bx (interp-get-field obj-expr classes field-name recur)])
+                (let ([old-val (unbox bx)])
+                  (begin (set-box! bx (recur val-expr))
+                         old-val)))]
+                       
+                ))))
+
+(define (interp-get-field obj-expr classes field-name recur)
+  (type-case Value (recur obj-expr)
+    [objV (class-name field-vals)
+          (type-case ClassC (find-class class-name classes)
+            [classC (name field-names methods super-name)
+                    (get-field-raw field-name field-names 
+                                   field-vals)])]
+    [else (error 'interp "not an object")]))
 
 ;; instance?
 (define (instance? [classes : (listof ClassC)] [class-name : symbol] [super-name : symbol]) : boolean
@@ -240,7 +272,7 @@
         (numV 70))
 
   (test (interp-posn (newC 'posn (list (numC 2) (numC 7))))
-        (objV 'posn (list (numV 2) (numV 7))))
+        (objV 'posn (list (box (numV 2)) (box (numV 7)))))
 
   (test (interp-posn (sendC posn27 'mdist (numC 0)))
         (numV 9))
