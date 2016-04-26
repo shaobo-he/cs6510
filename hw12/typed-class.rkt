@@ -186,7 +186,15 @@
                   (typecheck-send (classT-super-name this-class)
                                   method-name
                                   arg-expr arg-type
-                                  t-classes))]))))
+                                  t-classes))]
+        ;; instanceofc
+        [instanceofI (obj-expr super-name)
+                     (local [(define obj-type (recur obj-expr))]
+                         (type-case Type obj-type
+                           [numT () (type-error obj-expr "numbers are not objects")]
+                           [else (numT)]))]
+                     
+        ))))
 
 (define (typecheck-send [class-name : symbol]
                         [method-name : symbol]
@@ -245,8 +253,7 @@
                      (check-override m t-class t-classes)))
                  methods)]))
 
-(define (typecheck [a : ExprI] [t-classes : (listof ClassT)]) : Type
-  (begin
+(define (typecheck [a : ExprI] [t-classes : (listof ClassT)]) : Type(begin
     (map (lambda (t-class)
            (typecheck-class t-class t-classes))
          t-classes)
@@ -372,3 +379,4 @@
         (numV 18))
   (test (interp-t-posn (sendI posn27 'addDist posn531))
         (numV 18)))
+;(trace typecheck)

@@ -21,7 +21,12 @@
          (method-name : symbol)
          (arg-expr : ExprI)]
   [superI (method-name : symbol)
-          (arg-expr : ExprI)])
+          (arg-expr : ExprI)]
+  
+  ;; p2 instance of
+  [instanceofI (class-expr : ExprI)
+               (super : symbol)]
+  )
 
 (define-type ClassI
   [classI (name : symbol)
@@ -59,7 +64,10 @@
               (ssendC (thisC)
                       super-name
                       method-name
-                      (recur arg-expr))])))
+                      (recur arg-expr))]
+      [instanceofI (class-expr super)
+                   (instanceofC (expr-i->c class-expr super-name)
+                                super)])))
 
 (module+ test
   (test (expr-i->c (numI 10) 'object)
@@ -79,7 +87,11 @@
   (test (expr-i->c (sendI (numI 1) 'mdist (numI 2)) 'object)
         (sendC (numC 1) 'mdist (numC 2)))
   (test (expr-i->c (superI 'mdist (numI 2)) 'posn)
-        (ssendC (thisC) 'posn 'mdist (numC 2))))
+        (ssendC (thisC) 'posn 'mdist (numC 2)))
+  ;; instanceof
+  (test (expr-i->c (instanceofI (newI 'empty empty) 'some-class) 'object)
+          (instanceofC (newC 'empty empty) 'some-class))
+  )
 
 ;; ----------------------------------------
 
@@ -98,7 +110,7 @@
     (methodC 'mdist
              (plusC (getC (thisC) 'z)
                     (ssendC (thisC) 'posn 'mdist (argC)))))
-
+  
   (test (method-i->c posn3d-mdist-i-method 'posn)
         posn3d-mdist-c-method))
 
@@ -111,7 +123,8 @@
              name
              field-names
              (map (lambda (m) (method-i->c m super-name))
-                  methods))]))
+                  methods)
+             super-name)]))
 
 (module+ test
   (define posn3d-i-class 
@@ -122,7 +135,8 @@
   (define posn3d-c-class-not-flat
     (classC 'posn3d
             (list 'z)
-            (list posn3d-mdist-c-method)))
+            (list posn3d-mdist-c-method)
+            'posn))
   
   (test (class-i->c-not-flat posn3d-i-class)
         posn3d-c-class-not-flat))
@@ -133,15 +147,40 @@
                        [classes : (listof ClassC)] 
                        [i-classes : (listof ClassI)]) : ClassC
   (type-case ClassC c
-    [classC (name field-names methods)
+    [classC (name field-names methods super)
             (type-case ClassC (flatten-super name classes i-classes)
-              [classC (super-name super-field-names super-methods)
+              [classC (super-name super-field-names super-methods super)
                       (classC
                        name
                        (add-fields super-field-names field-names)
-                       (add/replace-methods super-methods methods))])]))
+                       (add/replace-methods super-methods methods)
+                       super-name)])]))
 
 (define (flatten-super [name : symbol]
+                       [classes : (listof ClassC)] 
+                       [i-classes : (listof ClassI)]) : ClassC
+  (type-case ClassI (find-i-class name i-classes)
+    [classI (name super-name field-names i-methods)
+            (if (equal? super-name 'object)
+                (classC 'object empty empty 'object)
+                (flatten-class (find-class super-name classes)
+                               classes
+                               i-classes))]))
+
+#;(define (flatten-class [c : ClassC] 
+                       [classes : (listof ClassC)] 
+                       [i-classes : (listof ClassI)]) : ClassC
+  (type-case ClassC c
+    [classC (name field-names methods this-class-super)
+            (type-case ClassC (flatten-super name classes i-classes)
+              [classC (super-name super-field-names super-methods this-class-super)
+                      (classC
+                       name
+                       (add-fields super-field-names field-names)
+                       (add/replace-methods super-methods methods)
+                       this-class-super)])]))
+
+#;(define (flatten-super [name : symbol]
                        [classes : (listof ClassC)] 
                        [i-classes : (listof ClassI)]) : ClassC
   (type-case ClassI (find-i-class name i-classes)
@@ -173,13 +212,15 @@
             (list (methodC 'mdist
                            (plusC (getC (thisC) 'x)
                                   (getC (thisC) 'y)))
-                  addDist-c-method)))
+                  addDist-c-method)
+            'object))
   (define posn3d-c-class
     (classC 'posn3d
             (list 'x 'y 'z)
             (list posn3d-mdist-c-method
-                  addDist-c-method)))
-
+                  addDist-c-method)
+            'posn))
+  
   (test (flatten-class posn3d-c-class-not-flat
                        (list posn-c-class-not-flat
                              posn3d-c-class-not-flat)
@@ -216,7 +257,7 @@
 (module+ test
   (test (add-fields (list 'x 'y) (list 'z))
         (list 'x 'y 'z))
-
+  
   (test (add/replace-methods empty empty)
         empty)
   (test (add/replace-methods empty (list (methodC 'm (numC 0))))
@@ -236,7 +277,7 @@
                                    (methodC 'n (numC 2))))
         (list (methodC 'm (numC 1))
               (methodC 'n (numC 2))))
-
+  
   (test (add/replace-method (list (methodC 'm (numC 0)))
                             (methodC 'm (numC 1)))
         (list (methodC 'm (numC 1))))
@@ -264,7 +305,7 @@
 (module+ test
   (test (interp-i (numI 0) empty)
         (numV 0))
-
+  
   (test (interp-i
          (sendI (newI 'posn3d (list (numI 5) (numI 3) (numI 1)))
                 'addDist
@@ -272,3 +313,4 @@
          (list posn-i-class
                posn3d-i-class))
         (numV 18)))
+;(trace interp-i)

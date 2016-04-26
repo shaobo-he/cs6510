@@ -78,20 +78,27 @@
 ;; ----------------------------------------
 
 (define (interp-t-prog [classes : (listof s-expression)] [a : s-expression]) : s-expression
-  (let ([v (interp-t (parse a)
-                     (map parse-t-class classes))])
-    (type-case Value v
-      [numV (n) (number->s-exp n)]
-      [objV (class-name field-vals) `object])))
+  (let ([pa (parse a)]
+        [classes-t (map parse-t-class classes)])
+    (begin
+      ;(typecheck-expr pa classes-t (numT) (numT) true)
+      #;(map (λ (x)
+             (typecheck-class x classes-t)) classes-t)
+      (typecheck pa classes-t)
+      (let ([v (interp-t pa
+                         classes-t)])
+        (type-case Value v
+          [numV (n) (number->s-exp n)]
+          [objV (class-name field-vals) `object])))))
 
 (module+ test
   ;; 1. Fix arg/this tests
-  (test (interp-t-prog
+  (test/exn (interp-t-prog
          (list
           '{class empty extends object
                   {}})
          '{+ arg 2})
-        '1)
+        "not allowed")
   
   (test (interp-t-prog
          (list
@@ -119,5 +126,3 @@
         
         '{send {new posn3D 5 3 1} addDist {new posn 2 7}})
        '18))
-(trace parse-t-field)
- 

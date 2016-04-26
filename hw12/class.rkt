@@ -18,12 +18,18 @@
   [ssendC (obj-expr : ExprC)
           (class-name : symbol)
           (method-name : symbol)
-          (arg-expr : ExprC)])
+          (arg-expr : ExprC)]
+
+  ;; instanceof
+  [instanceofC (obj-expr : ExprC)
+               (class-name : symbol)]
+  )
 
 (define-type ClassC
   [classC (name : symbol)
           (field-names : (listof symbol))
-          (methods : (listof MethodC))])
+          (methods : (listof MethodC))
+          (super-name : symbol)])
 
 (define-type MethodC
   [methodC (name : symbol)
@@ -70,11 +76,11 @@
 (module+ test
   (test/exn (find-class 'a empty)
             "not found")
-  (test (find-class 'a (list (classC 'a empty empty)))
-        (classC 'a empty empty))
-  (test (find-class 'b (list (classC 'a empty empty)
-                             (classC 'b empty empty)))
-        (classC 'b empty empty))
+  (test (find-class 'a (list (classC 'a empty empty 'object)))
+        (classC 'a empty empty 'object))
+  (test (find-class 'b (list (classC 'a empty empty 'object)
+                             (classC 'b empty empty 'object)))
+        (classC 'b empty empty 'object))
   (test (get-field 'a 
                    (list 'a 'b)
                    (list (numV 0) (numV 1)))
@@ -102,7 +108,7 @@
               (type-case Value (recur obj-expr)
                 [objV (class-name field-vals)
                       (type-case ClassC (find-class class-name classes)
-                        [classC (name field-names methods)
+                        [classC (name field-names methods super-name)
                                 (get-field field-name field-names 
                                            field-vals)])]
                 [else (error 'interp "not an object")])]
@@ -118,12 +124,43 @@
                 (local [(define obj (recur obj-expr))
                         (define arg-val (recur arg-expr))]
                   (call-method class-name method-name classes
-                               obj arg-val))]))))
+                               obj arg-val))]
+        [instanceofC (obj-expr super-name)
+                     (local [(define obj (recur obj-expr))]
+                       (type-case Value obj
+                         [objV (class-name field-vals)
+                               (if (instance? classes class-name super-name)
+                                   (numV 0)
+                                   (numV 1))]
+                         ;; Unnecessary. Typechecker should have caught this
+                         [else (error 'interp "not an object")]))]))))
+
+;; instance?
+(define (instance? [classes : (listof ClassC)] [class-name : symbol] [super-name : symbol]) : boolean
+  (cond
+    [(symbol=? 'object super-name) true]
+    [(symbol=? class-name 'object) false]
+    [(symbol=? class-name super-name) true]
+    [else
+     (instance? classes
+                (get-super classes class-name)
+                super-name)]))
+
+(define (get-super [classes : (listof ClassC)] [class-name : symbol]) : symbol
+  (cond
+    [(empty? (rest classes)) (classC-super-name (first classes))] ;; If we've made it this far, then class-name
+                                                             ;; is definitely a valid class in the program
+    [else (type-case ClassC (first classes)
+            [classC (name field-names methods super)
+                    (if (symbol=? name class-name)
+                        super
+                        (get-super (rest classes) class-name))])]))
+;; end instance?
 
 (define (call-method class-name method-name classes
                      obj arg-val)
   (type-case ClassC (find-class class-name classes)
-    [classC (name field-names methods)
+    [classC (name field-names methods super-name)
             (type-case MethodC (find-method method-name methods)
               [methodC (name body-expr)
                        (interp body-expr
@@ -159,7 +196,8 @@
            (methodC 'addX
                     (plusC (getC (thisC) 'x) (argC)))
            (methodC 'multY (multC (argC) (getC (thisC) 'y)))
-           (methodC 'factory12 (newC 'posn (list (numC 1) (numC 2)))))))
+           (methodC 'factory12 (newC 'posn (list (numC 1) (numC 2)))))
+     'object))
 
   (define posn3D-class
     (classC 
@@ -167,7 +205,8 @@
      (list 'x 'y 'z)
      (list (methodC 'mdist (plusC (getC (thisC) 'z)
                                   (ssendC (thisC) 'posn 'mdist (argC))))
-           (methodC 'addDist (ssendC (thisC) 'posn 'addDist (argC))))))
+           (methodC 'addDist (ssendC (thisC) 'posn 'addDist (argC))))
+     'posn))
 
   (define posn27 (newC 'posn (list (numC 2) (numC 7))))
   (define posn531 (newC 'posn3D (list (numC 5) (numC 3) (numC 1))))

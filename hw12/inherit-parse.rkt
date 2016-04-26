@@ -56,6 +56,11 @@
     [(s-exp-match? '{super SYMBOL ANY} s)
      (superI (s-exp->symbol (second (s-exp->list s)))
              (parse (third (s-exp->list s))))]
+    ;; instanceof
+    [(s-exp-match? '{instanceof ANY SYMBOL} s)
+     (instanceofI (parse (second (s-exp->list s)))
+                  (s-exp->symbol (third (s-exp->list s))))]
+    
     [else (error 'parse "invalid input")]))
 
 (module+ test
@@ -99,7 +104,13 @@
                 (list (methodI 'm1 (argI))
                       (methodI 'm2 (thisI)))))
   (test/exn (parse-class '{class})
-            "invalid input"))
+            "invalid input")
+  ;; instanceof
+  (test (parse '{instanceof this some-class})
+        (instanceofI (thisI) 'some-class))
+  (test (parse '{instanceof 2 something})
+        (instanceofI (numI 2) 'something))
+  )
 
 ;; ----------------------------------------
 
@@ -117,12 +128,14 @@
              {}})
          '{new empty})
         `object)
+
+  ;; XXX I think this is an invalid program. Check that this shouldn't be here.
   (test (interp-prog
          (list
           '{class empty extends object
              {}})
          `this)
-        `object)
+        '-1)
   
   (test (interp-prog 
          (list
