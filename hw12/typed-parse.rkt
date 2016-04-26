@@ -91,6 +91,14 @@
           [numV (n) (number->s-exp n)]
           [objV (class-name field-vals) `object])))))
 
+(define (typecheck-prog [classes : (listof s-expression)] [a : s-expression]) : s-expression
+  (let ([pa (parse a)]
+        [classes-t (map parse-t-class classes)])
+    (begin
+      (type-case Type (typecheck pa classes-t)
+        [numT () `num]
+        [objT (name) (symbol->s-exp name)]))))
+
 (module+ test
   ;; 1. Fix arg/this tests
   (test/exn (interp-t-prog

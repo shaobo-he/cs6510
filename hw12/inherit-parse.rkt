@@ -186,3 +186,4 @@
          
          '{send {new posn3D 5 3 1} addDist {new posn 2 7}})
         '18))
+;(trace parse)

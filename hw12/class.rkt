@@ -158,7 +158,8 @@
 
         ;; begin
         [beginC (exprs)
-                (numV 0)]
+                (let ([vals (map recur exprs)])
+                  (first (reverse vals)))]
         
         ;; set. The interpreter defines the result of set
         ;; to be the old value of the set field.

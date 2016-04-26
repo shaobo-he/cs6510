@@ -206,8 +206,32 @@
                                [(is-subtype? els-type thn-type t-classes) els-type]
                                [else (type-error thn "incompatible if types")]))]
                   [else (type-error cnd "not a number")]))]
-                     
-        ))))
+        
+        ;; begin - typecheck all expressions, then return the type of the final
+        ;; expression as the expression type
+        [beginI (exprs)
+                (let ([exprs-t (map recur exprs)]) ;; We want typecheck side-effects
+                  (first (reverse exprs-t)))] ;; Return type of last expression
+        
+        ;; Set
+        [setI (obj-expr field-name val-expr)
+              (let ([obj-t (recur obj-expr)]
+                    [val-t (recur val-expr)])
+                (type-case Type obj-t
+                  [numT () (type-error obj-expr "cannot assign")]
+                  [objT (target-class)
+                        (local [(define t-class
+                                  (find-classT target-class t-classes))
+                                (define field
+                                  (find-field-in-tree field-name
+                                                      t-class
+                                                      t-classes))]
+                          (type-case FieldT field
+                            [fieldT (name type)
+                                    (cond
+                                      [(and (numT? type) (numT? val-t)) type]
+                                      [(is-subtype? val-t type t-classes) val-t]
+                                      [else (type-error val-t "cannot assign")])]))]))]))))
 
 (define (typecheck-send [class-name : symbol]
                         [method-name : symbol]
