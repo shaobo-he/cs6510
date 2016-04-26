@@ -193,6 +193,19 @@
                          (type-case Type obj-type
                            [numT () (type-error obj-expr "numbers are not objects")]
                            [else (numT)]))]
+
+        ;; if0
+        [if0I (cnd thn els)
+              (let ([cnd-type (recur cnd)])
+                (type-case Type cnd-type
+                  [numT () (let ([thn-type (recur thn)]
+                                 [els-type (recur els)])
+                             ;; Find subtype (if there is one)
+                             (cond
+                               [(is-subtype? thn-type els-type t-classes) thn-type]
+                               [(is-subtype? els-type thn-type t-classes) els-type]
+                               [else (type-error thn "incompatible if types")]))]
+                  [else (type-error cnd "not a number")]))]
                      
         ))))
 

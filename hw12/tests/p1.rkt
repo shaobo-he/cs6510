@@ -7,9 +7,6 @@
          "../typed-parse.rkt")
 
 (module+ test
-  (print-only-errors true))
-
-(module+ test
   ;; 1. Fix this/arg
   
   ;; Relevant changes are in typed-class.rkt. An 'is-main' argument is added which determines

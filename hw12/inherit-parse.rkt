@@ -60,6 +60,13 @@
     [(s-exp-match? '{instanceof ANY SYMBOL} s)
      (instanceofI (parse (second (s-exp->list s)))
                   (s-exp->symbol (third (s-exp->list s))))]
+
+    ;; if0
+    [(s-exp-match? '{if0 ANY ANY ANY} s)
+     (let ([ls (s-exp->list s)])
+       (if0I (parse (second ls))
+             (parse (third ls))
+             (parse (fourth ls))))]
     
     [else (error 'parse "invalid input")]))
 
@@ -152,4 +159,3 @@
          
          '{send {new posn3D 5 3 1} addDist {new posn 2 7}})
         '18))
-

@@ -23,6 +23,11 @@
   ;; instanceof
   [instanceofC (obj-expr : ExprC)
                (class-name : symbol)]
+
+  ;; if0
+  [if0C (cnd : ExprC)
+        (thn : ExprC)
+        (els : ExprC)]
   )
 
 (define-type ClassC
@@ -125,6 +130,7 @@
                         (define arg-val (recur arg-expr))]
                   (call-method class-name method-name classes
                                obj arg-val))]
+        ;; instanceof
         [instanceofC (obj-expr super-name)
                      (local [(define obj (recur obj-expr))]
                        (type-case Value obj
@@ -132,8 +138,14 @@
                                (if (instance? classes class-name super-name)
                                    (numV 0)
                                    (numV 1))]
-                         ;; Unnecessary. Typechecker should have caught this
-                         [else (error 'interp "not an object")]))]))))
+                         ;; Unnecessary copy/paste. Typechecker would have caught this
+                         [else (error 'interp "not an object")]))]
+        ;; if0
+        [if0C (cnd thn els)
+              (let ([cond (recur cnd)])
+                (if (eq? (numV-n cond) 0)
+                    (recur thn)
+                    (recur els)))]))))
 
 ;; instance?
 (define (instance? [classes : (listof ClassC)] [class-name : symbol] [super-name : symbol]) : boolean

@@ -26,6 +26,11 @@
   ;; p2 instance of
   [instanceofI (class-expr : ExprI)
                (super : symbol)]
+
+  ;; p3 if0
+  [if0I (cnd : ExprI)
+        (thn : ExprI)
+        (els : ExprI)]
   )
 
 (define-type ClassI
@@ -67,7 +72,9 @@
                       (recur arg-expr))]
       [instanceofI (class-expr super)
                    (instanceofC (expr-i->c class-expr super-name)
-                                super)])))
+                                super)]
+      [if0I (cnd thn els)
+            (if0C (recur cnd) (recur thn) (recur els))])))
 
 (module+ test
   (test (expr-i->c (numI 10) 'object)

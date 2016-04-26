@@ -6,8 +6,6 @@
          "../inherit-parse.rkt"
          "../typed-parse.rkt")
 
-(module+ test
-  (print-only-errors true))
 
 (module+ test
   ;; 2. instanceof form
