@@ -32,6 +32,9 @@
   [if0I (cnd : ExprI)
         (thn : ExprI)
         (els : ExprI)]
+  ;; p5 cast
+  [castI (name : symbol)
+         (obj-expr : ExprI)]
 
   ;; p6 set
   [setI (obj-expr : ExprI)
@@ -85,6 +88,8 @@
               (beginC (map recur exprs))]
       [setI (obj-expr name val-expr)
             (setC (recur obj-expr) name (recur val-expr))]
+      [castI (name obj-expr)
+             (castC name (recur obj-expr))]
       )))
 
 (module+ test

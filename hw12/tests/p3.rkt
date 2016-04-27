@@ -1,9 +1,5 @@
 #lang plai-typed
 (require plai-typed/s-exp-match
-         "../class.rkt"
-         "../inherit.rkt"
-         "../typed-class.rkt"
-         "../inherit-parse.rkt"
          "../typed-parse.rkt")
 
 #;(module+ test

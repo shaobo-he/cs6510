@@ -68,6 +68,11 @@
              (parse (third ls))
              (parse (fourth ls))))]
 
+    ;; cast
+    [(s-exp-match? '{cast SYMBOL ANY} s)
+     (castI (s-exp->symbol (second (s-exp->list s)))
+            (parse (third (s-exp->list s))))]
+
     ;; begin
     [(s-exp-match? '{begin ANY ANY ...} s)
      (beginI (map parse (rest (s-exp->list s))))]

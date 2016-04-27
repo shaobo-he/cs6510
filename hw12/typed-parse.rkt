@@ -77,20 +77,30 @@
 
 ;; ----------------------------------------
 
-(define (interp-t-prog [classes : (listof s-expression)] [a : s-expression]) : s-expression
+;; interp which performs typechecking before running
+(define interp-t-prog
+  (λ (classes a)
+    (interp-t-prog-real classes a true)))
+;; interp which does not perform typechecking before running
+(define interp-prog
+  (λ (classes a)
+    (interp-t-prog-real classes a false)))
+
+;; Interps the program with or without typechecking
+(define (interp-t-prog-real [classes : (listof s-expression)] [a : s-expression] [tc : boolean]) : s-expression
   (let ([pa (parse a)]
         [classes-t (map parse-t-class classes)])
     (begin
-      ;(typecheck-expr pa classes-t (numT) (numT) true)
-      #;(map (λ (x)
-             (typecheck-class x classes-t)) classes-t)
-      (typecheck pa classes-t)
+      (if tc
+          (typecheck pa classes-t)
+          (numT))
       (let ([v (interp-t pa
                          classes-t)])
         (type-case Value v
           [numV (n) (number->s-exp n)]
           [objV (class-name field-vals) `object])))))
 
+;; Performs typechecking on the program
 (define (typecheck-prog [classes : (listof s-expression)] [a : s-expression]) : s-expression
   (let ([pa (parse a)]
         [classes-t (map parse-t-class classes)])

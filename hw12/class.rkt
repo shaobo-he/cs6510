@@ -29,6 +29,10 @@
         (thn : ExprC)
         (els : ExprC)]
 
+  ;; cast
+  [castC (name : symbol)
+         (obj-expr : ExprC)]
+
   ;; begin
   [beginC (exprs : (listof ExprC))]
 
@@ -156,6 +160,17 @@
                     (recur thn)
                     (recur els)))]
 
+        ;; cast
+        [castC (name obj-expr) 
+               (let [(obj-v (recur obj-expr))]
+                 (type-case Value obj-v
+                   [objV (obj-name field-vals) 
+                         (cond
+                           ;; Check if we are casting to a super class
+                           [(member name (get-super-classes obj-name classes empty)) obj-v]
+                           [else (error 'interp "could not cast")])]
+                   [else (error 'interp "can only cast objects")]))]
+
         ;; begin
         [beginC (exprs)
                 (let ([vals (map recur exprs)])
@@ -170,6 +185,18 @@
                          old-val)))]
                        
                 ))))
+
+;; get-super-clases
+;; Maybe I should have kept track of this... Oh well, too late now.
+;; At least it's tail recursive.
+(define (get-super-classes name classes supers)
+  (cond
+    [(eq? 'object name) (begin
+                          (display (cons 'object supers))
+                          (cons 'object supers))]
+    [else (get-super-classes (classC-super-name (find-class name classes))
+                             classes
+                             (cons name supers))]))
 
 (define (interp-get-field obj-expr classes field-name recur)
   (type-case Value (recur obj-expr)

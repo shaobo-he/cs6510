@@ -1,9 +1,6 @@
 #lang plai-typed
 (require plai-typed/s-exp-match
-         "../class.rkt"
-         "../inherit.rkt"
          "../typed-class.rkt"
-         "../inherit-parse.rkt"
          "../typed-parse.rkt")
 
 (module+ test
@@ -25,21 +22,6 @@
                         {[z : num]}
                         {mdist : num -> num {+ {get this z} 
                                                {super mdist arg}}}}))
-  (define classes1 (list
-                    (classT
-                     'posn
-                     'object
-                     (list (fieldT 'x (numT)) (fieldT 'y (numT)))
-                     (list
-                      (methodT 'mdist (numT) (numT) (plusI (getI (thisI) 'x) (getI (thisI) 'y)))
-                      (methodT 'addDist (objT 'posn) (numT) (plusI (sendI (argI) 'mdist (numI 0))
-                                                                   (sendI (thisI) 'mdist (numI 0))))))
-                    (classT
-                     'posn3D
-                     'posn
-                     (list (fieldT 'z (numT)))
-                     (list (methodT 'mdist (numT) (numT) (plusI (getI (thisI) 'z)
-                                                                (superI 'mdist (argI))))))))
   
   (test/exn (typecheck-prog p1classes
                             `this)

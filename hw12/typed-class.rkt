@@ -213,7 +213,18 @@
                                   [some (t) t]
                                   [none () (type-error thn "incompatible if types")])]))]
                   [else (type-error cnd "not a number")]))]
-        
+
+        ;; cast
+        [castI (name obj-expr)
+               (let ([obj-t (recur obj-expr)])
+                 (type-case Type obj-t
+                   [objT (class-name) (cond
+                                        [(is-subtype? obj-t (objT name) t-classes) (objT name)]
+                                        [(is-subtype? (objT name) obj-t t-classes) (objT name)]
+                                        [else (type-error obj-expr (string-append "could not cast to "
+                                                                                  (symbol->string name)))])]
+                   [else (type-error obj-expr "can only cast objects")]))]
+
         ;; begin - typecheck all expressions, then return the type of the final
         ;; expression as the expression type
         [beginI (exprs)

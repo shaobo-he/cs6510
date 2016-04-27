@@ -1,16 +1,12 @@
 #lang plai-typed
 (require plai-typed/s-exp-match
-         "../class.rkt"
-         "../inherit.rkt"
-         "../typed-class.rkt"
-         "../inherit-parse.rkt"
          "../typed-parse.rkt")
 
 #;(module+ test
   (print-only-errors true))
 
 (module+ test
-  ;; 4. generalized if types. Tests supersed part 3 tests.
+  ;; 4. generalized if types. Tests supersede part 3 tests.
   
   ;; Classes
   (define p4A '{class A extends object{}})
