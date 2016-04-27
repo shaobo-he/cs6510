@@ -99,14 +99,14 @@
     [else (equal? t1 t2)]))
 
 (module+ test
-  (define a-t-class (classT 'a 'object empty empty))
-  (define b-t-class (classT 'b 'a empty empty))
+  (define tca-t-class (classT 'a 'object empty empty))
+  (define tcb-t-class (classT 'b 'a empty empty))
 
   (test (is-subclass? 'object 'object empty)
         true)
-  (test (is-subclass? 'a 'b (list a-t-class b-t-class))
+  (test (is-subclass? 'a 'b (list tca-t-class tcb-t-class))
         false)
-  (test (is-subclass? 'b 'a (list a-t-class b-t-class))
+  (test (is-subclass? 'b 'a (list tca-t-class tcb-t-class))
         true)
 
   (test (is-subtype? (numT) (numT) empty)
@@ -115,9 +115,9 @@
         false)
   (test (is-subtype? (objT 'object) (numT) empty)
         false)
-  (test (is-subtype? (objT 'a) (objT 'b) (list a-t-class b-t-class))
+  (test (is-subtype? (objT 'a) (objT 'b) (list tca-t-class tcb-t-class))
         false)
-  (test (is-subtype? (objT 'b) (objT 'a) (list a-t-class b-t-class))
+  (test (is-subtype? (objT 'b) (objT 'a) (list tca-t-class tcb-t-class))
         true))
 
 ;; ----------------------------------------
@@ -347,7 +347,7 @@
 ;; ----------------------------------------
 
 (module+ test
-  (define posn-t-class
+  (define tcposn-t-class
     (classT 'posn 'object
             (list (fieldT 'x (numT)) (fieldT 'y (numT)))
             (list (methodT 'mdist (numT) (numT) 
@@ -356,46 +356,46 @@
                            (plusI (sendI (thisI) 'mdist (numI 0))
                                   (sendI (argI) 'mdist (numI 0)))))))
 
-  (define posn3D-t-class 
+  (define tcposn3D-t-class 
     (classT 'posn3D 'posn
             (list (fieldT 'z (numT)))
             (list (methodT 'mdist (numT) (numT)
                            (plusI (getI (thisI) 'z) 
                                   (superI 'mdist (argI)))))))
 
-  (define square-t-class 
+  (define tcsquare-t-class 
     (classT 'square 'object
             (list (fieldT 'topleft (objT 'posn)))
             (list)))
 
-  (define (typecheck-posn a)
+  (define (tctypecheck-posn a)
     (typecheck a
-               (list posn-t-class posn3D-t-class square-t-class)))
+               (list tcposn-t-class tcposn3D-t-class tcsquare-t-class)))
   
-  (define posn27 (newI 'posn (list (numI 2) (numI 7))))
-  (define posn531 (newI 'posn3D (list (numI 5) (numI 3) (numI 1))))
+  (define tcposn27 (newI 'posn (list (numI 2) (numI 7))))
+  (define tcposn531 (newI 'posn3D (list (numI 5) (numI 3) (numI 1))))
 
-  (test (typecheck-posn (sendI posn27 'mdist (numI 0)))
+  (test (tctypecheck-posn (sendI tcposn27 'mdist (numI 0)))
         (numT))
-  (test (typecheck-posn (sendI posn531 'mdist (numI 0)))
+  (test (tctypecheck-posn (sendI tcposn531 'mdist (numI 0)))
         (numT))  
-  (test (typecheck-posn (sendI posn531 'addDist posn27))
+  (test (tctypecheck-posn (sendI tcposn531 'addDist tcposn27))
         (numT))  
-  (test (typecheck-posn (sendI posn27 'addDist posn531))
+  (test (tctypecheck-posn (sendI tcposn27 'addDist tcposn531))
         (numT))
 
-  (test (typecheck-posn (newI 'square (list (newI 'posn (list (numI 0) (numI 1))))))
+  (test (tctypecheck-posn (newI 'square (list (newI 'posn (list (numI 0) (numI 1))))))
         (objT 'square))
-  (test (typecheck-posn (newI 'square (list (newI 'posn3D (list (numI 0) (numI 1) (numI 3))))))
+  (test (tctypecheck-posn (newI 'square (list (newI 'posn3D (list (numI 0) (numI 1) (numI 3))))))
         (objT 'square))
   
   (test (typecheck (multI (numI 1) (numI 2))
                    empty)
         (numT))
   
-  (test/exn (typecheck-posn (sendI (numI 10) 'mdist (numI 0)))
+  (test/exn (tctypecheck-posn (sendI (numI 10) 'mdist (numI 0)))
             "no type")
-  (test/exn (typecheck-posn (sendI posn27 'mdist posn27))
+  (test/exn (tctypecheck-posn (sendI tcposn27 'mdist tcposn27))
             "no type")
   (test/exn (typecheck (plusI (numI 1) (newI 'object empty))
                        empty)
@@ -410,7 +410,7 @@
                        empty)
             "no type")
   (test/exn (typecheck (numI 10)
-                       (list posn-t-class 
+                       (list tcposn-t-class 
                              (classT 'other 'posn
                                      (list)
                                      (list (methodT 'mdist 
@@ -421,7 +421,7 @@
   (test/exn (typecheck-method (methodT 'm (numT) (objT 'object) (numI 0)) (objT 'object) empty)
             "no type")
   (test/exn (typecheck (numI 0)
-                       (list square-t-class
+                       (list tcsquare-t-class
                              (classT 'cube 'square
                                      empty
                                      (list
@@ -452,16 +452,16 @@
               (map strip-types t-classes))))
 
 (module+ test
-  (define (interp-t-posn a)
+  (define (tcinterp-t-posn a)
     (interp-t a
-              (list posn-t-class posn3D-t-class)))
+              (list tcposn-t-class tcposn3D-t-class)))
   
-  (test (interp-t-posn (sendI posn27 'mdist (numI 0)))
+  (test (tcinterp-t-posn (sendI tcposn27 'mdist (numI 0)))
         (numV 9))  
-  (test (interp-t-posn (sendI posn531 'mdist (numI 0)))
+  (test (tcinterp-t-posn (sendI tcposn531 'mdist (numI 0)))
         (numV 9))
-  (test (interp-t-posn (sendI posn531 'addDist posn27))
+  (test (tcinterp-t-posn (sendI tcposn531 'addDist tcposn27))
         (numV 18))
-  (test (interp-t-posn (sendI posn27 'addDist posn531))
+  (test (tcinterp-t-posn (sendI tcposn27 'addDist tcposn531))
         (numV 18)))
 ;(trace typecheck)
