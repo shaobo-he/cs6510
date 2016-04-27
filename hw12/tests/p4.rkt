@@ -6,7 +6,7 @@
          "../inherit-parse.rkt"
          "../typed-parse.rkt")
 
-(module+ test
+#;(module+ test
   (print-only-errors true))
 
 (module+ test

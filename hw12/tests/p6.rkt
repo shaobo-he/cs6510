@@ -11,7 +11,7 @@
 
 (module+ test
   ;; 6. Imperative set
-  (define posn-class
+  (define p6posn-class
     '{class posn extends object
        {[x : num] [y : num]}
        {mdist : num -> num {+ {get this x} {get this y}}}
@@ -21,19 +21,19 @@
                                {set this y {get this x}}
                                this}}})
   
-  (define posn3D-class
+  (define p6posn3D-class
     '{class posn3D extends posn
        {[z : num]}
        {mdist : num -> num {+ {get this z} 
                               {super mdist arg}}}})
   
-  (define posn4D-class
+  (define p6posn4D-class
     '{class posn4D extends posn3D
        {[w : num]}
        {mdist : num -> num {+ {get this w} 
                               {super mdist arg}}}})
   
-  (define posn-pair-class
+  (define p6posn-pair-class
     '{class posn-pair extends object
        {[p1 : posn]
         [p2 : posn]}
@@ -43,7 +43,7 @@
                 {set this p2 arg}
                 this}}})
   
-  (define posn-pair2-class
+  (define p6posn-pair2-class
     '{class posn-pair2 extends object
        {[p1 : posn3D]
         [p2 : posn3D]}
@@ -70,13 +70,13 @@
                        '{send {new setclass 3}
                               terminates? 0}))) ;; Fun program
   (define p6prog2 (λ (r)
-                    (r (list posn-class)
+                    (r (list p6posn-class)
                        '{get {send {new posn 3 2} sety-x 0} y}))) ;; Easier to understand
   (define p6prog3 (λ (r)
-                    (r (list posn-class)
+                    (r (list p6posn-class)
                        '(set {new posn 1 2} w 7)))) ;; Checks field is available for assignment
   (define p6prog4 (λ (r)
-                    (r (list posn-class posn3D-class posn-pair-class)
+                    (r (list p6posn-class p6posn3D-class p6posn-pair-class)
                        '{send
                          {send
                           {new posn-pair {new posn 1 2} {new posn 3 4}}
@@ -85,7 +85,7 @@
                          addDist
                          0}))) ;; Set field to subclass
   (define p6prog5 (λ (r)
-                    (r (list set-class posn-class posn3D-class posn-pair-class)
+                    (r (list set-class p6posn-class p6posn3D-class p6posn-pair-class)
                        '{send
                          {send
                           {new posn-pair {new posn 1 2} {new posn 3 4}}
@@ -94,7 +94,7 @@
                          addDist
                          0}))) ;; Set field to non subclass
   (define p6prog6 (λ (r)
-                    (r (list set-class posn-class posn3D-class posn-pair-class)
+                    (r (list set-class p6posn-class p6posn3D-class p6posn-pair-class)
                        '{send
                          {send
                           {new posn-pair {new posn 1 2} {new posn 3 4}}
@@ -103,7 +103,7 @@
                          addDist
                          0}))) ;; set obj field to num
   (define p6prog8 (λ (r)
-                    (r (list set-class posn-class posn3D-class posn-pair2-class)
+                    (r (list set-class p6posn-class p6posn3D-class p6posn-pair2-class)
                        '{send
                          {send
                           {new posn-pair2 {new posn3D 1 2 3} {new posn3D 4 5 6}}
@@ -112,7 +112,7 @@
                          addDist
                          0}))) ;; Attempt to set a super to a sub type
   (define p6prog7 (λ (r)
-                    (r (list posn-class)
+                    (r (list p6posn-class)
                        '(set {new posn 1 2} x {new posn 1 2})))) ;; Attempt to assign an obj to num
   
   
