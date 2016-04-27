@@ -162,9 +162,11 @@
                       (local [(define t-class
                                 (find-classT class-name t-classes))
                               (define field
-                                (find-field-in-tree field-name
+                                (try
+                                 (find-field-in-tree field-name
                                                     t-class
-                                                    t-classes))]
+                                                    t-classes)
+                                 (λ () (type-error obj-expr "field not found"))))]
                         (type-case FieldT field
                           [fieldT (name type) type]))]
                 [else (type-error obj-expr "object")])]
@@ -228,9 +230,11 @@
                         (local [(define t-class
                                   (find-classT target-class t-classes))
                                 (define field
-                                  (find-field-in-tree field-name
-                                                      t-class
-                                                      t-classes))]
+                                  (try
+                                   (find-field-in-tree field-name
+                                                       t-class
+                                                       t-classes)
+                                   (λ () (type-error obj-expr "field not found"))))]
                           (type-case FieldT field
                             [fieldT (name type)
                                     (cond
