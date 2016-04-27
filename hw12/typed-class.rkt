@@ -202,9 +202,14 @@
                                  [els-type (recur els)])
                              ;; Find subtype (if there is one)
                              (cond
-                               [(is-subtype? thn-type els-type t-classes) thn-type]
-                               [(is-subtype? els-type thn-type t-classes) els-type]
-                               [else (type-error thn "incompatible if types")]))]
+                               [(is-subtype? thn-type els-type t-classes) els-type]
+                               [(is-subtype? els-type thn-type t-classes) thn-type]
+                               [else
+                                (type-case (optionof Type) (if0-find-common-type thn-type
+                                                                                els-type
+                                                                                t-classes)
+                                  [some (t) t]
+                                  [none () (type-error thn "incompatible if types")])]))]
                   [else (type-error cnd "not a number")]))]
         
         ;; begin - typecheck all expressions, then return the type of the final
@@ -232,6 +237,34 @@
                                       [(and (numT? type) (numT? val-t)) type]
                                       [(is-subtype? val-t type t-classes) val-t]
                                       [else (type-error val-t "cannot assign")])]))]))]))))
+
+(define (if0-find-common-type [thn-t : Type] [els-t : Type] [t-classes : (listof ClassT)]) : (optionof Type)
+  (let* ([class-types (map (λ (x)
+                             [objT (classT-name x)]) t-classes)]
+         [thn-supers (filter (λ (x)
+                               (is-subtype? thn-t x t-classes)) class-types)]
+         [els-supers (filter (λ (x)
+                               (is-subtype? els-t x t-classes)) class-types)]
+         [common-supers (filter (λ (x)
+                                  (member x els-supers)) thn-supers)])
+    (if (eq? (length common-supers) 0)
+        (none)
+        (some (if0-LUB common-supers t-classes)))))
+
+(define (if0-LUB (common-supers : (listof Type)) (t-classes : (listof ClassT))) : Type
+  (cond
+    [(eq? (length common-supers) 1) (first common-supers)]
+    [else (if0-LUB (filter (λ (x)
+                             (if0-has-super x common-supers t-classes)) common-supers)
+                   t-classes)])
+ )
+
+(define (if0-has-super (t : Type) (supers : (listof Type)) (t-classes : (listof ClassT))) : boolean
+  (foldl (λ (x y)
+           (and x y))
+         true
+         (map (λ (x)
+                (is-subtype? t x t-classes)) supers)))
 
 (define (typecheck-send [class-name : symbol]
                         [method-name : symbol]
