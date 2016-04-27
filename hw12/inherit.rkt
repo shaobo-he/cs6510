@@ -143,17 +143,17 @@
                       (expr-i->c body-expr super-name))]))
 
 (module+ test
-  (define posn3d-mdist-i-method
+  (define ihposn3d-mdist-i-method
     (methodI 'mdist
              (plusI (getI (thisI) 'z)
                     (superI 'mdist (argI)))))
-  (define posn3d-mdist-c-method
+  (define ihposn3d-mdist-c-method
     (methodC 'mdist
              (plusC (getC (thisC) 'z)
                     (ssendC (thisC) 'posn 'mdist (argC)))))
   
-  (test (method-i->c posn3d-mdist-i-method 'posn)
-        posn3d-mdist-c-method))
+  (test (method-i->c ihposn3d-mdist-i-method 'posn)
+        ihposn3d-mdist-c-method))
 
 ;; ----------------------------------------
 
@@ -168,19 +168,19 @@
              super-name)]))
 
 (module+ test
-  (define posn3d-i-class 
+  (define ihposn3d-i-class 
     (classI 'posn3d
             'posn
             (list 'z)
-            (list posn3d-mdist-i-method)))
-  (define posn3d-c-class-not-flat
+            (list ihposn3d-mdist-i-method)))
+  (define ihposn3d-c-class-not-flat
     (classC 'posn3d
             (list 'z)
-            (list posn3d-mdist-c-method)
+            (list ihposn3d-mdist-c-method)
             'posn))
   
-  (test (class-i->c-not-flat posn3d-i-class)
-        posn3d-c-class-not-flat))
+  (test (class-i->c-not-flat ihposn3d-i-class)
+        ihposn3d-c-class-not-flat))
 
 ;; ----------------------------------------
 
@@ -208,32 +208,8 @@
                                classes
                                i-classes))]))
 
-#;(define (flatten-class [c : ClassC] 
-                       [classes : (listof ClassC)] 
-                       [i-classes : (listof ClassI)]) : ClassC
-  (type-case ClassC c
-    [classC (name field-names methods this-class-super)
-            (type-case ClassC (flatten-super name classes i-classes)
-              [classC (super-name super-field-names super-methods this-class-super)
-                      (classC
-                       name
-                       (add-fields super-field-names field-names)
-                       (add/replace-methods super-methods methods)
-                       this-class-super)])]))
-
-#;(define (flatten-super [name : symbol]
-                       [classes : (listof ClassC)] 
-                       [i-classes : (listof ClassI)]) : ClassC
-  (type-case ClassI (find-i-class name i-classes)
-    [classI (name super-name field-names i-methods)
-            (if (equal? super-name 'object)
-                (classC 'object empty empty)
-                (flatten-class (find-class super-name classes)
-                               classes
-                               i-classes))]))
-
 (module+ test
-  (define posn-i-class 
+  (define ihposn-i-class 
     (classI 'posn
             'object
             (list 'x 'y)
@@ -243,31 +219,31 @@
                   (methodI 'addDist
                            (plusI (sendI (thisI) 'mdist (numI 0))
                                   (sendI (argI) 'mdist (numI 0)))))))
-  (define addDist-c-method
+  (define ihaddDist-c-method
     (methodC 'addDist
              (plusC (sendC (thisC) 'mdist (numC 0))
                     (sendC (argC) 'mdist (numC 0)))))
-  (define posn-c-class-not-flat
+  (define ihposn-c-class-not-flat
     (classC 'posn
             (list 'x 'y)
             (list (methodC 'mdist
                            (plusC (getC (thisC) 'x)
                                   (getC (thisC) 'y)))
-                  addDist-c-method)
+                  ihaddDist-c-method)
             'object))
-  (define posn3d-c-class
+  (define ihposn3d-c-class
     (classC 'posn3d
             (list 'x 'y 'z)
-            (list posn3d-mdist-c-method
-                  addDist-c-method)
+            (list ihposn3d-mdist-c-method
+                  ihaddDist-c-method)
             'posn))
   
-  (test (flatten-class posn3d-c-class-not-flat
-                       (list posn-c-class-not-flat
-                             posn3d-c-class-not-flat)
-                       (list posn-i-class
-                             posn3d-i-class))
-        posn3d-c-class))
+  (test (flatten-class ihposn3d-c-class-not-flat
+                       (list ihposn-c-class-not-flat
+                             ihposn3d-c-class-not-flat)
+                       (list ihposn-i-class
+                             ihposn3d-i-class))
+        ihposn3d-c-class))
 
 ;; ----------------------------------------
 
@@ -351,7 +327,7 @@
          (sendI (newI 'posn3d (list (numI 5) (numI 3) (numI 1)))
                 'addDist
                 (newI 'posn (list (numI 2) (numI 7))))
-         (list posn-i-class
-               posn3d-i-class))
+         (list ihposn-i-class
+               ihposn3d-i-class))
         (numV 18)))
 ;(trace interp-i)
