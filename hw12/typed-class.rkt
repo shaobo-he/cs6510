@@ -465,3 +465,6 @@
   (test (tcinterp-t-posn (sendI tcposn27 'addDist tcposn531))
         (numV 18)))
 ;(trace typecheck)
+
+;; end type-class
+

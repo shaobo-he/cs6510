@@ -326,3 +326,6 @@
             "not an object")
   (test/exn (classinterp-posn (newC 'posn (list (numC 0))))
             "wrong field count"))
+
+;; class end
+
