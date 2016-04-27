@@ -59,7 +59,7 @@
                                         {set this x {+ {get this x} -1}}
                                         {send this terminates? arg}}}}})
   
-  (define empty-class '{class empty extends object {}})
+  (define p6empty-class '{class empty extends object {}})
   
   ;; Programs
   (define p6prog1 (λ (r)
@@ -111,6 +111,9 @@
   (define p6prog7 (λ (r)
                     (r (list p6posn-class)
                        '(set {new posn 1 2} x {new posn 1 2})))) ;; Attempt to assign an obj to num
+  (define p6prog9 (λ (r)
+                    (r (list p6posn-class)
+                       '(set 3 x {new posn 1 2})))) ;; Attempt to assign an obj to num
   
   
   ;; Implementation
@@ -155,6 +158,11 @@
   (test/exn (p6prog8 interp-t-prog)
             "no type")
   (test/exn (p6prog8 typecheck-prog)
+            "no type")
+  
+  (test/exn (p6prog9 interp-t-prog)
+            "no type")
+  (test/exn (p6prog9 typecheck-prog)
             "no type")
   
   

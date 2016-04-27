@@ -22,7 +22,9 @@
                         {[z : num]}
                         {mdist : num -> num {+ {get this z} 
                                                {super mdist arg}}}}))
-  
+  (test/exn (typecheck-prog p1classes
+               '{get {new posn 1 2} w})
+            "not found")
   (test/exn (typecheck-prog p1classes
                             `this)
             "not allowed")

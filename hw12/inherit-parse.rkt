@@ -153,22 +153,21 @@
 
 ;; ----------------------------------------
 
-(define (interp-prog [classes : (listof s-expression)] [a : s-expression]) : s-expression
+#;(define (interp-prog [classes : (listof s-expression)] [a : s-expression]) : s-expression
   (let ([v (interp-i (parse a)
                      (map parse-class classes))])
     (type-case Value v
       [numV (n) (number->s-exp n)]
       [objV (class-name field-vals) `object])))
 
-(module+ test
+#;(module+ test
   (test (interp-prog
          (list
           '{class empty extends object
              {}})
          '{new empty})
         `object)
-
-  ;; XXX I think this is an invalid program. Check that this shouldn't be here.
+  ;; Invalid behavior, but just testing
   (test (interp-prog
          (list
           '{class empty extends object
@@ -179,14 +178,14 @@
   (test (interp-prog 
          (list
           '{class posn extends object
-             {x y}
-             {mdist {+ {get this x} {get this y}}}
-             {addDist {+ {send arg mdist 0}
+             {[x : num] [y : num]}
+             {mdist : num -> num {+ {get this x} {get this y}}}
+             {addDist : posn -> num {+ {send arg mdist 0}
                          {send this mdist 0}}}}
           
           '{class posn3D extends posn
-             {z}
-             {mdist {+ {get this z} 
+             {[z : num]}
+             {mdist : num -> num {+ {get this z} 
                        {super mdist arg}}}})
          
          '{send {new posn3D 5 3 1} addDist {new posn 2 7}})

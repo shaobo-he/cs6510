@@ -32,6 +32,9 @@
   (test/exn (interp-t-prog empty
                            '{instanceof 2 object})
             "number")
+  (test/exn (interp-prog empty
+                           '{instanceof 2 object})
+            "not")
   (test (interp-t-prog 
          (list p2empty-class p2posn4D-class p2posn-class p2posn3D-class)
          '{instanceof {new empty} posn3D})

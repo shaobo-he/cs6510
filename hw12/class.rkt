@@ -191,9 +191,7 @@
 ;; At least it's tail recursive.
 (define (get-super-classes name classes supers)
   (cond
-    [(eq? 'object name) (begin
-                          (display (cons 'object supers))
-                          (cons 'object supers))]
+    [(eq? 'object name) (cons 'object supers)]
     [else (get-super-classes (classC-super-name (find-class name classes))
                              classes
                              (cons name supers))]))
