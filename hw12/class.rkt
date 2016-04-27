@@ -256,7 +256,7 @@
 ;; Examples
 
 (module+ test
-  (define posn-class
+  (define classposn-class
     (classC 
      'posn
      (list 'x 'y)
@@ -271,7 +271,7 @@
            (methodC 'factory12 (newC 'posn (list (numC 1) (numC 2)))))
      'object))
 
-  (define posn3D-class
+  (define classposn3D-class
     (classC 
      'posn3D
      (list 'x 'y 'z)
@@ -280,11 +280,11 @@
            (methodC 'addDist (ssendC (thisC) 'posn 'addDist (argC))))
      'posn))
 
-  (define posn27 (newC 'posn (list (numC 2) (numC 7))))
-  (define posn531 (newC 'posn3D (list (numC 5) (numC 3) (numC 1))))
+  (define classposn27 (newC 'posn (list (numC 2) (numC 7))))
+  (define classposn531 (newC 'posn3D (list (numC 5) (numC 3) (numC 1))))
 
-  (define (interp-posn a)
-    (interp a (list posn-class posn3D-class) (numV -1) (numV -1))))
+  (define (classinterp-posn a)
+    (interp a (list classposn-class classposn3D-class) (numV -1) (numV -1))))
 
 ;; ----------------------------------------
 
@@ -299,30 +299,30 @@
                 empty (numV -1) (numV -1))
         (numV 70))
 
-  (test (interp-posn (newC 'posn (list (numC 2) (numC 7))))
+  (test (classinterp-posn (newC 'posn (list (numC 2) (numC 7))))
         (objV 'posn (list (box (numV 2)) (box (numV 7)))))
 
-  (test (interp-posn (sendC posn27 'mdist (numC 0)))
+  (test (classinterp-posn (sendC classposn27 'mdist (numC 0)))
         (numV 9))
   
-  (test (interp-posn (sendC posn27 'addX (numC 10)))
+  (test (classinterp-posn (sendC classposn27 'addX (numC 10)))
         (numV 12))
 
-  (test (interp-posn (sendC (ssendC posn27 'posn 'factory12 (numC 0))
+  (test (classinterp-posn (sendC (ssendC classposn27 'posn 'factory12 (numC 0))
                             'multY
                             (numC 15)))
         (numV 30))
 
-  (test (interp-posn (sendC posn531 'addDist posn27))
+  (test (classinterp-posn (sendC classposn531 'addDist classposn27))
         (numV 18))
   
-  (test/exn (interp-posn (plusC (numC 1) posn27))
+  (test/exn (classinterp-posn (plusC (numC 1) classposn27))
             "not a number")
-  (test/exn (interp-posn (getC (numC 1) 'x))
+  (test/exn (classinterp-posn (getC (numC 1) 'x))
             "not an object")
-  (test/exn (interp-posn (sendC (numC 1) 'mdist (numC 0)))
+  (test/exn (classinterp-posn (sendC (numC 1) 'mdist (numC 0)))
             "not an object")
-  (test/exn (interp-posn (ssendC (numC 1) 'posn 'mdist (numC 0)))
+  (test/exn (classinterp-posn (ssendC (numC 1) 'posn 'mdist (numC 0)))
             "not an object")
-  (test/exn (interp-posn (newC 'posn (list (numC 0))))
+  (test/exn (classinterp-posn (newC 'posn (list (numC 0))))
             "wrong field count"))
