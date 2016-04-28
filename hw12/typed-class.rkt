@@ -250,7 +250,7 @@
                             [fieldT (name type)
                                     (cond
                                       [(and (numT? type) (numT? val-t)) type]
-                                      [(is-subtype? val-t type t-classes) val-t]
+                                      [(is-subtype? val-t type t-classes) type]
                                       [else (type-error val-t "cannot assign")])]))]))]))))
 
 (define (if0-find-common-type [thn-t : Type] [els-t : Type] [t-classes : (listof ClassT)]) : (optionof Type)
