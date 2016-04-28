@@ -1109,7 +1109,7 @@
                             [fieldT (name type)
                                     (cond
                                       [(and (numT? type) (numT? val-t)) type]
-                                      [(is-subtype? val-t type t-classes) val-t]
+                                      [(is-subtype? val-t type t-classes) type]
                                       [else (type-error val-t "cannot assign")])]))]))]))))
 
 (define (if0-find-common-type [thn-t : Type] [els-t : Type] [t-classes : (listof ClassT)]) : (optionof Type)
@@ -2078,6 +2078,11 @@
                     (r (list p6posn-class)
                        '(set 3 x {new posn 1 2})))) ;; Attempt to assign an obj to num
   
+  (define p6prog10 (λ (r)
+                     (r (list p6posn-pair-class p6posn-class p6posn3D-class p6posn-class)
+                        '{set {new posn-pair
+                                   {new posn 1 2}
+                                   {new posn 3 4}} p1 {new posn3D 5 6 7}})))
   
   ;; Implementation
   
@@ -2127,6 +2132,9 @@
             "no type")
   (test/exn (p6prog9 typecheck-prog)
             "no type")
+  
+  (test (p6prog10 typecheck-prog)
+        `posn)
   
   
   )
