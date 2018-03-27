@@ -5,11 +5,13 @@ module Interpreter.Interp
 import Interpreter.Types
 import Interpreter.Parser
 import Interpreter.Desugar
+import Data.Functor.Identity
+import Control.Applicative
 
 interpS :: String -> Either String Value
 interpS s = case parseLisp s of
               Left err -> Left $ "Parse err: " ++ show err
-              Right v  -> Right $ interp (desugar v) []
+              Right v  -> Right $ runIdentity $ interp (desugar v) []
 
 ilookup :: Name -> Env -> Value
 ilookup n [] = error $ n ++ ": name not found"
@@ -29,36 +31,35 @@ num_eq   = num_op (==) BoolV
 extend_env :: Binding -> Env -> Env
 extend_env = (:)
 
-interp :: ExprC -> Env -> Value
+interp :: ExprC -> Env -> Identity Value
 interp exp e =
   case exp of
-    IdC name -> ilookup name e
-    NumC v -> NumV v
-    BoolC p -> BoolV p
-    PlusC l r -> let lv = interp l e
-                     rv = interp r e
-                 in  num_plus lv rv
-    MultC l r -> let lv = interp l e
-                     rv = interp r e
-                 in  num_mult lv rv
-    EqC l r -> let lv = interp l e
-                   rv = interp r e
-               in  num_eq lv rv
-    IfC c th el -> let cond = interp c e
-                   in case cond of
-                        BoolV True -> interp th e
-                        BoolV False -> interp el e
-                        _ -> error "not a boolean"
-    LamC n body -> ClosV n e body
-    AppC fun arg -> case interp fun e of
-                        ClosV name env body
-                          -> interp body $
-                                    extend_env (Bind name $ interp arg e) env
+    IdC name -> return $ ilookup name e
+    NumC v -> return $ NumV v
+    BoolC p -> return $ BoolV p
+    PlusC l r -> num_plus <$> interp l e <*> interp r e
+    MultC l r -> num_mult <$> interp l e <*> interp r e
+    EqC l r -> num_eq <$> interp l e <*> interp r e
+    IfC c th el -> do
+                     cond <- interp c e
+                     case cond of
+                       BoolV True -> interp th e
+                       BoolV False -> interp el e
+                       _ -> error "not a boolean"
+    LamC n body -> return $ ClosV n e body
+    AppC fun arg -> do
+                      f <- interp fun e
+                      a <- interp arg e
+                      case f of
+                        ClosV name env body -> interp body $
+                                extend_env (Bind name a) env
                         _ -> error "not a function"
-    ThunkC exp -> ThunkV e exp
-    ForceC exp -> case interp exp e of
-                    ThunkV tenv texp -> interp texp tenv
-                    _ -> error "not a thunk"
+    ThunkC exp -> return $ ThunkV e exp
+    ForceC exp -> do
+                    f <- interp exp e
+                    case f of
+                      ThunkV tenv texp -> interp texp tenv
+                      _ -> error "not a thunk"
     ErrC msg -> error msg
 
 
