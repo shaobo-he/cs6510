@@ -7,17 +7,18 @@ import Interpreter.Parser
 import Interpreter.Desugar
 import Data.Functor.Identity
 import Control.Applicative
+import Control.Monad.Except
 
 interpS :: String -> Either String Value
 interpS s = case parseLisp s of
               Left err -> Left $ "Parse err: " ++ show err
               Right v  -> Right $ runIdentity $ interp (desugar v) []
 
-ilookup :: Name -> Env -> Value
-ilookup n [] = error $ n ++ ": name not found"
+ilookup :: Name -> Env -> Maybe Value
+ilookup n [] = Nothing
 
 ilookup n ((Bind bn bv):bs) = if   bn == n
-                              then bv
+                              then Just bv
                               else ilookup n bs
 
 num_op f cnst l r = case (l, r) of
@@ -34,7 +35,9 @@ extend_env = (:)
 interp :: ExprC -> Env -> Identity Value
 interp exp e =
   case exp of
-    IdC name -> return $ ilookup name e
+    IdC name -> case (ilookup name e) of
+                  Just v' -> return v'
+                  Nothing -> error $ name ++ ": name not found"
     NumC v -> return $ NumV v
     BoolC p -> return $ BoolV p
     PlusC l r -> num_plus <$> interp l e <*> interp r e
